@@ -15,7 +15,7 @@ const handleGoogleLogin = async (response) => {
     console.error('Error al entrar:', error.message)
   } else {
     console.log('¡Bienvenido!', data.user)
-    router.push('/dashboard')
+    router.push('/home')
   }
 }
 
