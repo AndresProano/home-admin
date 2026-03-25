@@ -63,12 +63,10 @@ const handleRemove = async (id: string, name: string) => {
       <h1>Kitchen Storage</h1>
     </header>
 
-    <!-- Low stock alert -->
     <div v-if="lowStockItems().length" class="alert">
       <strong>Low stock:</strong> {{ lowStockItems().map(i => i.name).join(', ') }}
     </div>
 
-    <!-- Category filter -->
     <div class="filter-bar">
       <button
         v-for="cat in activeCategories"
@@ -80,7 +78,6 @@ const handleRemove = async (id: string, name: string) => {
       </button>
     </div>
 
-    <!-- Items grid -->
     <div class="items-grid">
       <div
         v-for="item in filteredItems"
@@ -101,15 +98,12 @@ const handleRemove = async (id: string, name: string) => {
       </div>
     </div>
 
-    <!-- Empty state -->
     <div v-if="!items.length" class="empty-state">
       <p>No items yet. Add your first kitchen item!</p>
     </div>
 
-    <!-- Add button -->
     <button class="fab" @click="showForm = true" v-if="!showForm">+</button>
 
-    <!-- Add form modal -->
     <div v-if="showForm" class="modal-overlay" @click.self="showForm = false">
       <form class="modal-form" @submit.prevent="handleAdd">
         <h2>Add Item</h2>
@@ -151,22 +145,24 @@ const handleRemove = async (id: string, name: string) => {
   gap: 12px;
   margin-bottom: 16px;
 }
-.page-header h1 { margin: 0; font-size: 1.4rem; }
+.page-header h1 { margin: 0; font-size: 1.4rem; color: #e0e0e0; }
 .back-btn {
   background: none;
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
   padding: 4px 8px;
+  color: #8a8a9a;
 }
 
 .alert {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
-  border-radius: 8px;
+  background: rgba(255, 183, 77, 0.15);
+  border: 1px solid #ffb74d;
+  border-radius: 10px;
   padding: 10px 14px;
   margin-bottom: 12px;
   font-size: 0.9rem;
+  color: #ffb74d;
 }
 
 .filter-bar {
@@ -179,16 +175,17 @@ const handleRemove = async (id: string, name: string) => {
 .filter-chip {
   padding: 6px 14px;
   border-radius: 20px;
-  border: 1px solid #ddd;
-  background: white;
+  border: 1px solid #2a2a4a;
+  background: #16213e;
+  color: #8a8a9a;
   cursor: pointer;
   white-space: nowrap;
   font-size: 0.85rem;
 }
 .filter-chip.active {
-  background: #4caf50;
+  background: #40916c;
   color: white;
-  border-color: #4caf50;
+  border-color: #40916c;
 }
 
 .items-grid {
@@ -198,14 +195,14 @@ const handleRemove = async (id: string, name: string) => {
 }
 
 .item-card {
-  background: white;
-  border-radius: 12px;
+  background: #16213e;
+  border-radius: 14px;
   padding: 14px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
   text-align: center;
 }
 .item-card.low-stock {
-  border: 2px solid #f44336;
+  border: 2px solid #ff6b6b;
 }
 .item-header {
   display: flex;
@@ -215,14 +212,15 @@ const handleRemove = async (id: string, name: string) => {
 }
 .item-category {
   font-size: 0.7rem;
-  background: #e8f5e9;
+  background: rgba(64, 145, 108, 0.2);
   padding: 2px 8px;
   border-radius: 10px;
-  color: #2e7d32;
+  color: #40916c;
 }
 .item-card h3 {
   margin: 6px 0;
   font-size: 1rem;
+  color: #e0e0e0;
 }
 .quantity-controls {
   display: flex;
@@ -232,31 +230,32 @@ const handleRemove = async (id: string, name: string) => {
   margin-top: 8px;
 }
 .quantity-controls button {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  border: 1px solid #ddd;
-  background: #f5f5f5;
+  border: 1px solid #2a2a4a;
+  background: #1a1a2e;
+  color: #e0e0e0;
   font-size: 1.2rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.quantity { font-size: 1.3rem; font-weight: bold; min-width: 30px; }
-.low-label { color: #f44336; font-weight: bold; }
+.quantity { font-size: 1.3rem; font-weight: bold; min-width: 30px; color: #e0e0e0; }
+.low-label { color: #ff6b6b; font-weight: bold; }
 .remove-btn {
   background: none;
   border: none;
   font-size: 1.2rem;
   cursor: pointer;
-  color: #999;
+  color: #555;
 }
 
 .empty-state {
   text-align: center;
   padding: 40px 20px;
-  color: #999;
+  color: #8a8a9a;
 }
 
 .fab {
@@ -266,12 +265,12 @@ const handleRemove = async (id: string, name: string) => {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: #4caf50;
+  background: linear-gradient(135deg, #2d6a4f, #40916c);
   color: white;
   border: none;
   font-size: 2rem;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -280,35 +279,41 @@ const handleRemove = async (id: string, name: string) => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0,0,0,0.6);
   display: flex;
   align-items: flex-end;
   justify-content: center;
   z-index: 100;
 }
 .modal-form {
-  background: white;
+  background: #16213e;
   border-radius: 20px 20px 0 0;
   padding: 24px;
   width: 100%;
   max-width: 500px;
 }
-.modal-form h2 { margin: 0 0 16px; }
+.modal-form h2 { margin: 0 0 16px; color: #e0e0e0; }
 .modal-form label {
   display: block;
   margin-bottom: 12px;
   font-size: 0.9rem;
-  color: #555;
+  color: #8a8a9a;
 }
 .modal-form input, .modal-form select {
   display: block;
   width: 100%;
   padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid #2a2a4a;
+  border-radius: 10px;
   margin-top: 4px;
   font-size: 1rem;
   box-sizing: border-box;
+  background: #1a1a2e;
+  color: #e0e0e0;
+}
+.modal-form input:focus, .modal-form select:focus {
+  outline: none;
+  border-color: #40916c;
 }
 .form-row { display: flex; gap: 12px; }
 .form-row label { flex: 1; }
@@ -321,14 +326,15 @@ const handleRemove = async (id: string, name: string) => {
   flex: 1;
   padding: 12px;
   border-radius: 10px;
-  border: 1px solid #ddd;
-  background: white;
+  border: 1px solid #2a2a4a;
+  background: #1a1a2e;
+  color: #e0e0e0;
   font-size: 1rem;
   cursor: pointer;
 }
 .form-actions .primary {
-  background: #4caf50;
+  background: linear-gradient(135deg, #2d6a4f, #40916c);
   color: white;
-  border-color: #4caf50;
+  border-color: #40916c;
 }
 </style>

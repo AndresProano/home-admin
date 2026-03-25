@@ -9,14 +9,17 @@ import { RouterView } from 'vue-router'
 </template>
 
 <style>
-/* Estilos globales rápidos para móvil */
+* {
+  box-sizing: border-box;
+}
 body {
   margin: 0;
-  font-family: sans-serif;
-  background-color: #f4f4f9;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background-color: #1a1a2e;
+  color: #e0e0e0;
 }
 .app-container {
-  max-width: 500px; /* Tamaño ideal para móvil en pantalla de PC */
+  max-width: 520px;
   margin: 0 auto;
   min-height: 100vh;
 }

@@ -16,29 +16,24 @@ const {
 const view = ref<'shared' | 'personal'>('shared')
 const activeTab = ref<'expenses' | 'accounts'>('expenses')
 
-// Partner setup
 const showPartnerSetup = ref(false)
 const partnerMode = ref<'create' | 'join'>('join')
 const partnerInviteCode = ref('')
 const partnerError = ref('')
 
-// Account form
 const showAccountForm = ref(false)
 const newAccountName = ref('')
 const newAccountBalance = ref(0)
 
-// Expense form
 const showExpenseForm = ref(false)
 const newExpDesc = ref('')
 const newExpAmount = ref(0)
 const newExpCategory = ref('Food')
 const newExpDate = ref(new Date().toISOString().slice(0, 10))
 const newExpAccount = ref<string | null>(null)
-const newExpShared = ref(true)
 
 const expenseCategories = ['Food', 'Transport', 'Utilities', 'Rent', 'Entertainment', 'Health', 'Shopping', 'Education', 'Other']
 
-// Filtered data based on shared/personal view
 const filteredAccounts = computed(() =>
   accounts.value.filter(a => view.value === 'shared' ? a.is_shared : !a.is_shared)
 )
@@ -70,7 +65,6 @@ onMounted(async () => {
   }
 })
 
-// Partner actions
 const handleCreateInvite = async () => {
   partnerError.value = ''
   if (!user.value) return
@@ -93,7 +87,7 @@ const handleJoinPartner = async () => {
 }
 
 const handleRemovePartner = async () => {
-  if (confirm('Unlink your finance partner? You will no longer see shared finances.')) {
+  if (confirm('Unlink your finance partner?')) {
     await removePartner()
   }
 }
@@ -105,11 +99,9 @@ const copyPartnerCode = () => {
   }
 }
 
-// Account actions
 const handleAddAccount = async () => {
   if (!newAccountName.value.trim() || !user.value) return
-  const isShared = view.value === 'shared'
-  await addAccount(user.value.id, newAccountName.value.trim(), newAccountBalance.value, isShared)
+  await addAccount(user.value.id, newAccountName.value.trim(), newAccountBalance.value, view.value === 'shared')
   newAccountName.value = ''
   newAccountBalance.value = 0
   showAccountForm.value = false
@@ -134,15 +126,11 @@ const handleAddExpense = async () => {
 }
 
 const handleRemoveAccount = async (id: string, name: string) => {
-  if (confirm(`Delete account "${name}"?`)) {
-    await removeAccount(id)
-  }
+  if (confirm(`Delete account "${name}"?`)) await removeAccount(id)
 }
 
 const handleRemoveExpense = async (id: string) => {
-  if (confirm('Delete this expense? The amount will be refunded to the linked account.')) {
-    await removeExpense(id)
-  }
+  if (confirm('Delete this expense?')) await removeExpense(id)
 }
 
 const getAccountName = (accountId: string | null) => {
@@ -163,14 +151,14 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
       </button>
     </header>
 
-    <!-- Partner Setup Panel -->
-    <div v-if="showPartnerSetup" class="partner-panel">
+    <!-- Partner Panel -->
+    <div v-if="showPartnerSetup" class="panel">
       <div v-if="partner && partner.status === 'active'">
         <p class="partner-status">Partner linked</p>
         <button class="danger-btn" @click="handleRemovePartner">Unlink Partner</button>
       </div>
       <div v-else-if="partner && partner.status === 'pending'">
-        <p>Waiting for your partner to join. Share this code:</p>
+        <p>Waiting for your partner. Share this code:</p>
         <div class="invite-row">
           <code>{{ partner.invite_code }}</code>
           <button @click="copyPartnerCode">Copy</button>
@@ -202,7 +190,7 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
       <button :class="{ active: view === 'personal' }" @click="view = 'personal'">Personal</button>
     </div>
 
-    <!-- Summary cards -->
+    <!-- Summary -->
     <div class="summary-row">
       <div class="summary-card">
         <small>{{ view === 'shared' ? 'Shared Balance' : 'Personal Balance' }}</small>
@@ -214,22 +202,19 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
       </div>
     </div>
 
-    <!-- Low balance alert -->
     <div v-if="lowBalanceAccounts.length" class="alert">
       <strong>Low balance:</strong> {{ lowBalanceAccounts.map(a => `${a.name} ($${Number(a.balance).toFixed(2)})`).join(', ') }}
     </div>
 
-    <!-- Expenses / Accounts tabs -->
+    <!-- Tabs -->
     <div class="tabs">
       <button :class="{ active: activeTab === 'expenses' }" @click="activeTab = 'expenses'">Expenses</button>
       <button :class="{ active: activeTab === 'accounts' }" @click="activeTab = 'accounts'">Accounts</button>
     </div>
 
-    <!-- Accounts tab -->
+    <!-- Accounts -->
     <div v-if="activeTab === 'accounts'">
-      <div v-if="!filteredAccounts.length" class="empty-state">
-        <p>No {{ view }} accounts yet. Add one!</p>
-      </div>
+      <div v-if="!filteredAccounts.length" class="empty-state"><p>No {{ view }} accounts yet.</p></div>
       <div v-for="account in filteredAccounts" :key="account.id" class="list-item">
         <div>
           <strong>{{ account.name }}</strong>
@@ -242,12 +227,10 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
       </div>
     </div>
 
-    <!-- Expenses tab -->
+    <!-- Expenses -->
     <div v-if="activeTab === 'expenses'">
-      <div v-if="!filteredExpenses.length" class="empty-state">
-        <p>No {{ view }} expenses yet.</p>
-      </div>
-      <div v-for="expense in filteredExpenses" :key="expense.id" class="list-item expense-item">
+      <div v-if="!filteredExpenses.length" class="empty-state"><p>No {{ view }} expenses yet.</p></div>
+      <div v-for="expense in filteredExpenses" :key="expense.id" class="list-item">
         <div>
           <strong>{{ expense.description }}</strong>
           <div class="expense-meta">
@@ -339,48 +322,53 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
   gap: 12px;
   margin-bottom: 16px;
 }
-.page-header h1 { margin: 0; font-size: 1.4rem; flex: 1; }
+.page-header h1 { margin: 0; font-size: 1.4rem; flex: 1; color: #e0e0e0; }
 .back-btn {
   background: none;
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
   padding: 4px 8px;
+  color: #8a8a9a;
 }
 .partner-btn {
   padding: 6px 12px;
-  border: 1px solid #9c27b0;
+  border: 1px solid #6c63ff;
   border-radius: 8px;
-  background: white;
-  color: #9c27b0;
+  background: transparent;
+  color: #6c63ff;
   font-size: 0.85rem;
   cursor: pointer;
 }
 
-.partner-panel {
-  background: white;
-  border-radius: 12px;
+.panel {
+  background: #16213e;
+  border-radius: 14px;
   padding: 16px;
   margin-bottom: 16px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
 }
-.partner-panel label {
+.panel p { color: #8a8a9a; }
+.panel label {
   display: block;
   margin-bottom: 8px;
   font-size: 0.9rem;
-  color: #555;
+  color: #8a8a9a;
 }
-.partner-panel input {
+.panel input {
   display: block;
   width: 100%;
   padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid #2a2a4a;
+  border-radius: 10px;
   margin-top: 4px;
   font-size: 1rem;
   box-sizing: border-box;
+  background: #1a1a2e;
+  color: #e0e0e0;
 }
-.partner-status { color: #4caf50; font-weight: bold; }
+.panel input:focus { outline: none; border-color: #6c63ff; }
+.partner-status { color: #40916c; font-weight: bold; }
 .invite-row {
   display: flex;
   align-items: center;
@@ -388,25 +376,27 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
   margin: 8px 0;
 }
 .invite-row code {
-  background: #f5f5f5;
-  padding: 6px 12px;
-  border-radius: 6px;
+  background: #0f3460;
+  padding: 8px 14px;
+  border-radius: 8px;
   font-size: 1.1rem;
   letter-spacing: 2px;
+  color: #6c63ff;
 }
 .invite-row button {
-  padding: 6px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  background: white;
+  padding: 8px 14px;
+  border: 1px solid #2a2a4a;
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #e0e0e0;
   cursor: pointer;
 }
 .primary-btn {
   width: 100%;
   padding: 10px;
   border: none;
-  border-radius: 8px;
-  background: #9c27b0;
+  border-radius: 10px;
+  background: #6c63ff;
   color: white;
   font-size: 1rem;
   cursor: pointer;
@@ -415,33 +405,34 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
 .danger-btn {
   width: 100%;
   padding: 10px;
-  border: 1px solid #f44336;
-  border-radius: 8px;
-  background: white;
-  color: #f44336;
+  border: 1px solid #ff6b6b;
+  border-radius: 10px;
+  background: transparent;
+  color: #ff6b6b;
   cursor: pointer;
 }
-.error { color: #f44336; font-size: 0.9rem; margin-top: 8px; }
+.error { color: #ff6b6b; font-size: 0.9rem; margin-top: 8px; }
 
 .view-toggle {
   display: flex;
   margin-bottom: 16px;
-  background: #f3e5f5;
-  border-radius: 10px;
-  padding: 3px;
+  background: #16213e;
+  border-radius: 12px;
+  padding: 4px;
 }
 .view-toggle button {
   flex: 1;
   padding: 10px;
   border: none;
   background: transparent;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 500;
+  color: #8a8a9a;
 }
 .view-toggle button.active {
-  background: #9c27b0;
+  background: #6c63ff;
   color: white;
 }
 
@@ -452,45 +443,46 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
 }
 .summary-card {
   flex: 1;
-  background: white;
-  border-radius: 12px;
+  background: #16213e;
+  border-radius: 14px;
   padding: 16px;
   text-align: center;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
 }
-.summary-card small { display: block; color: #999; margin-bottom: 4px; }
-.summary-card strong { font-size: 1.3rem; }
-.negative { color: #f44336; }
-.spent { color: #f44336; }
+.summary-card small { display: block; color: #8a8a9a; margin-bottom: 4px; }
+.summary-card strong { font-size: 1.3rem; color: #e0e0e0; }
+.negative { color: #ff6b6b; }
+.spent { color: #ff6b6b; }
 
 .alert {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
-  border-radius: 8px;
+  background: rgba(255, 183, 77, 0.15);
+  border: 1px solid #ffb74d;
+  border-radius: 10px;
   padding: 10px 14px;
   margin-bottom: 12px;
   font-size: 0.9rem;
+  color: #ffb74d;
 }
 
 .tabs {
   display: flex;
-  gap: 0;
   margin-bottom: 16px;
-  background: #eee;
-  border-radius: 10px;
-  padding: 3px;
+  background: #16213e;
+  border-radius: 12px;
+  padding: 4px;
 }
 .tabs button {
   flex: 1;
   padding: 10px;
   border: none;
   background: transparent;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   font-size: 0.95rem;
+  color: #8a8a9a;
 }
 .tabs button.active {
-  background: #2196f3;
+  background: #6c63ff;
   color: white;
 }
 
@@ -498,36 +490,38 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: white;
-  border-radius: 10px;
+  background: #16213e;
+  border-radius: 12px;
   padding: 14px;
   margin-bottom: 8px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.2);
 }
+.list-item strong { color: #e0e0e0; }
 .list-item-right {
   display: flex;
   align-items: center;
   gap: 10px;
+  color: #e0e0e0;
 }
 .expense-meta {
   display: flex;
   gap: 8px;
   margin-top: 4px;
   font-size: 0.8rem;
-  color: #888;
+  color: #8a8a9a;
   flex-wrap: wrap;
 }
 .expense-category {
-  background: #e3f2fd;
+  background: rgba(108, 99, 255, 0.2);
   padding: 1px 8px;
   border-radius: 8px;
-  color: #1565c0;
+  color: #6c63ff;
 }
 .partner-label {
-  background: #f3e5f5;
+  background: rgba(108, 99, 255, 0.15);
   padding: 1px 8px;
   border-radius: 8px;
-  color: #9c27b0;
+  color: #6c63ff;
   font-size: 0.75rem;
 }
 .remove-btn {
@@ -535,13 +529,13 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
   border: none;
   font-size: 1.2rem;
   cursor: pointer;
-  color: #999;
+  color: #555;
 }
 
 .empty-state {
   text-align: center;
   padding: 40px 20px;
-  color: #999;
+  color: #8a8a9a;
 }
 
 .fab {
@@ -551,12 +545,12 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: #2196f3;
+  background: linear-gradient(135deg, #3a0ca3, #6c63ff);
   color: white;
   border: none;
   font-size: 2rem;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -565,35 +559,41 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0,0,0,0.6);
   display: flex;
   align-items: flex-end;
   justify-content: center;
   z-index: 100;
 }
 .modal-form {
-  background: white;
+  background: #16213e;
   border-radius: 20px 20px 0 0;
   padding: 24px;
   width: 100%;
   max-width: 500px;
 }
-.modal-form h2 { margin: 0 0 16px; }
+.modal-form h2 { margin: 0 0 16px; color: #e0e0e0; }
 .modal-form label {
   display: block;
   margin-bottom: 12px;
   font-size: 0.9rem;
-  color: #555;
+  color: #8a8a9a;
 }
 .modal-form input, .modal-form select {
   display: block;
   width: 100%;
   padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid #2a2a4a;
+  border-radius: 10px;
   margin-top: 4px;
   font-size: 1rem;
   box-sizing: border-box;
+  background: #1a1a2e;
+  color: #e0e0e0;
+}
+.modal-form input:focus, .modal-form select:focus {
+  outline: none;
+  border-color: #6c63ff;
 }
 .form-row { display: flex; gap: 12px; }
 .form-row label { flex: 1; }
@@ -606,14 +606,15 @@ const isOwner = (ownerId: string) => ownerId === user.value?.id
   flex: 1;
   padding: 12px;
   border-radius: 10px;
-  border: 1px solid #ddd;
-  background: white;
+  border: 1px solid #2a2a4a;
+  background: #1a1a2e;
+  color: #e0e0e0;
   font-size: 1rem;
   cursor: pointer;
 }
 .form-actions .primary {
-  background: #2196f3;
+  background: linear-gradient(135deg, #3a0ca3, #6c63ff);
   color: white;
-  border-color: #2196f3;
+  border-color: #6c63ff;
 }
 </style>
