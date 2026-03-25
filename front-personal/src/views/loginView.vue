@@ -1,9 +1,27 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabaseClient'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 const loading = ref(false)
 const error = ref('')
+
+// After OAuth redirect, Supabase puts tokens in the URL hash.
+// Wait for the session to be established, then redirect to /home.
+onMounted(async () => {
+  const { data } = await supabase.auth.getSession()
+  if (data.session) {
+    router.replace('/home')
+    return
+  }
+
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN' && session) {
+      router.replace('/home')
+    }
+  })
+})
 
 const handleGoogleLogin = async () => {
   loading.value = true
@@ -12,7 +30,7 @@ const handleGoogleLogin = async () => {
   const { error: authError } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: window.location.origin + '/home',
+      redirectTo: window.location.origin,
     },
   })
 
