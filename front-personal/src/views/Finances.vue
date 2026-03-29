@@ -7,10 +7,11 @@ import { useFinances } from '@/composables/useFinances'
 const router = useRouter()
 const { user } = useAuth()
 const {
-  accounts, expenses, partner,
+  accounts, expenses, partner, apiKey,
   personalBalance, sharedBalance,
   loadPartner, createPartnerInvite, joinPartner, removePartner,
   loadAccounts, loadExpenses, addAccount, removeAccount, addExpense, removeExpense,
+  loadApiKey, generateApiKey,
 } = useFinances()
 
 /* ─── View state ─── */
@@ -189,9 +190,21 @@ onMounted(async () => {
   detectApplePay()
   if (user.value) {
     await loadPartner(user.value.id)
-    await Promise.all([loadAccounts(), loadExpenses()])
+    await Promise.all([loadAccounts(), loadExpenses(), loadApiKey(user.value.id)])
   }
 })
+
+const handleGenerateApiKey = async () => {
+  if (!user.value) return
+  await generateApiKey(user.value.id)
+}
+
+const copyApiKey = () => {
+  if (apiKey.value) navigator.clipboard.writeText(apiKey.value)
+}
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 /* ─── Handlers ─── */
 const openAddForm = () => {
@@ -453,6 +466,41 @@ const formatAmount = (n: number) =>
             </div>
           </div>
           <p v-if="!filteredAccounts.length" class="muted">No accounts yet.</p>
+        </div>
+
+        <!-- Apple Pay Shortcut -->
+        <div class="drawer-section">
+          <h3>Apple Pay Shortcut</h3>
+          <p class="muted">Auto-log Apple Pay transactions using iOS Shortcuts.</p>
+          <div v-if="apiKey">
+            <p class="muted" style="margin-bottom:4px">Your API Key:</p>
+            <div class="code-row">
+              <code class="api-key-code">{{ apiKey.slice(0, 8) }}...{{ apiKey.slice(-4) }}</code>
+              <button @click="copyApiKey">Copy</button>
+            </div>
+            <div class="shortcut-instructions">
+              <p class="muted" style="margin-top:12px;margin-bottom:8px"><strong style="color:#e0e0e0">Shortcut setup:</strong></p>
+              <ol class="setup-steps">
+                <li>Open <strong>Shortcuts</strong> app on iPhone</li>
+                <li>Go to <strong>Automation</strong> tab</li>
+                <li>Tap <strong>+</strong> &rarr; <strong>Transaction</strong></li>
+                <li>Add action: <strong>Get Contents of URL</strong></li>
+                <li>URL: <code>{{ supabaseUrl }}/rest/v1/rpc/add_expense_via_api_key</code></li>
+                <li>Method: <strong>POST</strong></li>
+                <li>Headers:<br/>
+                  <code>apikey</code>: <code>{{ supabaseAnonKey?.slice(0, 12) }}...</code> <button class="copy-inline" @click="navigator.clipboard.writeText(supabaseAnonKey)">copy</button><br/>
+                  <code>Content-Type</code>: <code>application/json</code>
+                </li>
+                <li>Body (JSON):<br/>
+                  <code>{"p_api_key":"{{ apiKey }}", "p_amount": Amount, "p_merchant": Merchant}</code>
+                </li>
+              </ol>
+              <p class="muted" style="margin-top:8px">Use the <strong>Amount</strong> and <strong>Merchant</strong> variables from the Transaction trigger.</p>
+            </div>
+          </div>
+          <div v-else>
+            <button class="primary-btn" @click="handleGenerateApiKey">Generate API Key</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1034,6 +1082,42 @@ const formatAmount = (n: number) =>
   cursor: pointer;
 }
 .negative { color: #ff6b6b; }
+.api-key-code {
+  background: #1a1a2e;
+  padding: 8px 14px;
+  border-radius: 8px;
+  color: #4ecdc4;
+  letter-spacing: 1px;
+  font-size: 0.85rem;
+}
+.shortcut-instructions ol {
+  padding-left: 16px;
+  margin: 0;
+}
+.setup-steps li {
+  color: #8a8a9a;
+  font-size: 0.8rem;
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+.setup-steps code {
+  background: #1a1a2e;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: #6c63ff;
+  word-break: break-all;
+}
+.setup-steps strong { color: #e0e0e0; }
+.copy-inline {
+  background: none;
+  border: 1px solid #2a2a4a;
+  border-radius: 4px;
+  color: #6c63ff;
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  cursor: pointer;
+}
 
 /* ── Add Transaction Modal ── */
 .modal-overlay {

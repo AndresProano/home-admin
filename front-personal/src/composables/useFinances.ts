@@ -34,6 +34,7 @@ export interface FinancePartner {
 const accounts = ref<BankAccount[]>([])
 const expenses = ref<Expense[]>([])
 const partner = ref<FinancePartner | null>(null)
+const apiKey = ref<string | null>(null)
 
 export function useFinances() {
   // --- Balances ---
@@ -212,10 +213,32 @@ export function useFinances() {
     expenses.value = expenses.value.filter(e => e.id !== expenseId)
   }
 
+  // --- API Key (for iOS Shortcuts) ---
+  const loadApiKey = async (userId: string) => {
+    const { data } = await supabase
+      .from('user_api_keys')
+      .select('api_key')
+      .eq('user_id', userId)
+      .single()
+    apiKey.value = data?.api_key ?? null
+  }
+
+  const generateApiKey = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_api_keys')
+      .upsert({ user_id: userId }, { onConflict: 'user_id' })
+      .select('api_key')
+      .single()
+    if (error) throw error
+    apiKey.value = data.api_key
+    return data.api_key
+  }
+
   return {
     accounts,
     expenses,
     partner,
+    apiKey,
     personalBalance,
     sharedBalance,
     totalBalance,
@@ -229,5 +252,7 @@ export function useFinances() {
     loadExpenses,
     addExpense,
     removeExpense,
+    loadApiKey,
+    generateApiKey,
   }
 }

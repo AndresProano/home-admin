@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { supabase } from '@/lib/supabaseClient'
 import Home from '../views/Home.vue'
-import Kitchen from '../views/Kitchen.vue'
 import Finances from '../views/Finances.vue'
 import login from '../views/loginView.vue'
 
@@ -19,13 +18,7 @@ const router = createRouter({
       component: Home,
       meta: { requiresAuth: true },
     },
-    {
-      path: '/kitchen-storage',
-      name: 'Kitchen',
-      component: Kitchen,
-      meta: { requiresAuth: true },
-    },
-    {
+{
       path: '/finances',
       name: 'Finances',
       component: Finances,
