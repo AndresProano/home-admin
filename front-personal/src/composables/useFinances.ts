@@ -60,7 +60,7 @@ export function useFinances() {
       .from('finance_partners')
       .select('*')
       .or(`user_a.eq.${userId},user_b.eq.${userId}`)
-      .eq('status', 'active')
+      .in('status', ['active', 'pending'])
       .limit(1)
       .single()
 
