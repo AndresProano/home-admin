@@ -19,6 +19,8 @@ export interface Expense {
   category: string
   date: string
   created_at: string
+  payment_method?: string
+  type?: string
 }
 
 export interface FinancePartner {
@@ -158,7 +160,7 @@ export function useFinances() {
 
   const addExpense = async (
     userId: string,
-    expense: { description: string; amount: number; category: string; date: string; account_id: string | null; is_shared: boolean }
+    expense: { description: string; amount: number; category: string; date: string; account_id: string | null; is_shared: boolean; payment_method?: string; type?: string }
   ) => {
     const { data, error } = await supabase
       .from('expenses')
@@ -173,7 +175,7 @@ export function useFinances() {
     if (expense.account_id) {
       const account = accounts.value.find(a => a.id === expense.account_id)
       if (account) {
-        const newBalance = Number(account.balance) - expense.amount
+        const newBalance = Number(account.balance) + (expense.type === 'income' ? expense.amount : -expense.amount)
         await supabase
           .from('bank_accounts')
           .update({ balance: newBalance })
@@ -198,7 +200,7 @@ export function useFinances() {
     if (expense?.account_id) {
       const account = accounts.value.find(a => a.id === expense.account_id)
       if (account) {
-        const newBalance = Number(account.balance) + expense.amount
+        const newBalance = Number(account.balance) + ((expense.type || 'expense') === 'income' ? -expense.amount : expense.amount)
         await supabase
           .from('bank_accounts')
           .update({ balance: newBalance })
