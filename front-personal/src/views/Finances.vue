@@ -203,6 +203,10 @@ const copyApiKey = () => {
   if (apiKey.value) navigator.clipboard.writeText(apiKey.value)
 }
 
+const copyAnonKey = () => {
+  if (supabaseAnonKey) navigator.clipboard.writeText(supabaseAnonKey)
+}
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
@@ -488,7 +492,7 @@ const formatAmount = (n: number) =>
                 <li>URL: <code>{{ supabaseUrl }}/rest/v1/rpc/add_expense_via_api_key</code></li>
                 <li>Method: <strong>POST</strong></li>
                 <li>Headers:<br/>
-                  <code>apikey</code>: <code>{{ supabaseAnonKey?.slice(0, 12) }}...</code> <button class="copy-inline" @click="navigator.clipboard.writeText(supabaseAnonKey)">copy</button><br/>
+                  <code>apikey</code>: <code>{{ supabaseAnonKey?.slice(0, 12) }}...</code> <button class="copy-inline" @click="copyAnonKey">copy</button><br/>
                   <code>Content-Type</code>: <code>application/json</code>
                 </li>
                 <li>Body (JSON):<br/>
