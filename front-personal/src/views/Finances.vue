@@ -5,7 +5,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useFinances } from '@/composables/useFinances'
 
 const router = useRouter()
-const { user } = useAuth()
+const { user, waitForAuth } = useAuth()
 const {
   accounts, expenses, partner, apiKey,
   personalBalance, sharedBalance,
@@ -191,6 +191,7 @@ const parseVoiceInput = (text: string) => {
 /* ─── Lifecycle ─── */
 onMounted(async () => {
   detectApplePay()
+  await waitForAuth()
   if (user.value) {
     await loadPartner(user.value.id)
     await Promise.all([loadAccounts(), loadExpenses(), loadApiKey(user.value.id)])
