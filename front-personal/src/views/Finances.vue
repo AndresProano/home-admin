@@ -69,7 +69,7 @@ const paymentMethods = computed(() => {
 
 /* ─── Computed ─── */
 const accountsTotal = computed(() =>
-  filteredAccounts.value.reduce((sum, a) => sum + Number(a.balance), 0)
+  accounts.value.reduce((sum, a) => sum + Number(a.balance), 0)
 )
 
 const periodNet = computed(() =>
@@ -106,6 +106,25 @@ const filteredTransactions = computed(() => {
   return filteredByTime.value.filter(e =>
     e.description.toLowerCase().includes(q) || e.category.toLowerCase().includes(q)
   )
+})
+
+const groupedTransactions = computed(() => {
+  const groups: { date: string; label: string; transactions: typeof filteredTransactions.value }[] = []
+  const today = new Date().toISOString().slice(0, 10)
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+
+  for (const tx of filteredTransactions.value) {
+    const last = groups[groups.length - 1]
+    if (last && last.date === tx.date) {
+      last.transactions.push(tx)
+    } else {
+      let label = tx.date
+      if (tx.date === today) label = 'Today'
+      else if (tx.date === yesterday) label = 'Yesterday'
+      groups.push({ date: tx.date, label, transactions: [tx] })
+    }
+  }
+  return groups
 })
 
 const periodExpenseTotal = computed(() =>
@@ -292,6 +311,11 @@ const handleRemoveAccount = async (id: string, name: string) => {
 
 const isOwner = (ownerId: string) => ownerId === user.value?.id
 
+const getAccountName = (accountId: string | null) => {
+  if (!accountId) return ''
+  return accounts.value.find(a => a.id === accountId)?.name ?? ''
+}
+
 const getPaymentMethodLabel = (method: string | undefined) => {
   if (!method || method === 'other') return ''
   const labels: Record<string, string> = { cash: 'Cash', card: 'Card', apple_pay: 'Apple Pay', bank_transfer: 'Transfer' }
@@ -386,29 +410,32 @@ const formatAmount = (n: number) =>
         <p>Your transactions will show up here</p>
       </div>
       <div v-else class="transaction-list">
-        <div v-for="tx in filteredTransactions" :key="tx.id" class="transaction-item">
-          <div class="tx-left">
-            <div class="tx-icon-wrap" :class="tx.type || 'expense'">
-              <svg v-if="tx.payment_method === 'apple_pay'" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5C17.88 20.74 17 21.95 15.66 21.97C14.32 21.99 13.89 21.18 12.37 21.18C10.84 21.18 10.37 21.95 9.09 21.99C7.79 22.03 6.8 20.68 5.96 19.47C4.25 16.97 2.94 12.45 4.7 9.39C5.57 7.87 7.13 6.91 8.82 6.89C10.1 6.87 11.32 7.75 12.11 7.75C12.89 7.75 14.37 6.68 15.92 6.84C16.57 6.87 18.39 7.1 19.56 8.82C19.47 8.88 17.39 10.1 17.41 12.63C17.44 15.65 20.06 16.66 20.09 16.67C20.06 16.74 19.67 18.11 18.71 19.5ZM13 3.5C13.73 2.67 14.94 2.04 15.94 2C16.07 3.17 15.6 4.35 14.9 5.19C14.21 6.04 13.07 6.7 11.95 6.61C11.8 5.46 12.36 4.26 13 3.5Z"/></svg>
-              <svg v-else-if="(tx.type || 'expense') === 'income'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-              <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
-            </div>
-            <div class="tx-info">
-              <strong>{{ tx.description }}</strong>
-              <div class="tx-meta">
-                <span class="tx-category">{{ tx.category }}</span>
-                <span>{{ tx.date }}</span>
-                <span v-if="tx.payment_method && tx.payment_method !== 'other'" class="tx-method">{{ getPaymentMethodLabel(tx.payment_method) }}</span>
+        <template v-for="group in groupedTransactions" :key="group.date">
+          <div class="date-header">{{ group.label }}</div>
+          <div v-for="tx in group.transactions" :key="tx.id" class="transaction-item">
+            <div class="tx-left">
+              <div class="tx-icon-wrap" :class="tx.type || 'expense'">
+                <svg v-if="tx.payment_method === 'apple_pay'" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5C17.88 20.74 17 21.95 15.66 21.97C14.32 21.99 13.89 21.18 12.37 21.18C10.84 21.18 10.37 21.95 9.09 21.99C7.79 22.03 6.8 20.68 5.96 19.47C4.25 16.97 2.94 12.45 4.7 9.39C5.57 7.87 7.13 6.91 8.82 6.89C10.1 6.87 11.32 7.75 12.11 7.75C12.89 7.75 14.37 6.68 15.92 6.84C16.57 6.87 18.39 7.1 19.56 8.82C19.47 8.88 17.39 10.1 17.41 12.63C17.44 15.65 20.06 16.66 20.09 16.67C20.06 16.74 19.67 18.11 18.71 19.5ZM13 3.5C13.73 2.67 14.94 2.04 15.94 2C16.07 3.17 15.6 4.35 14.9 5.19C14.21 6.04 13.07 6.7 11.95 6.61C11.8 5.46 12.36 4.26 13 3.5Z"/></svg>
+                <svg v-else-if="(tx.type || 'expense') === 'income'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+              </div>
+              <div class="tx-info">
+                <strong>{{ tx.description }}</strong>
+                <div class="tx-meta">
+                  <span class="tx-category">{{ tx.category }}</span>
+                  <span v-if="tx.payment_method && tx.payment_method !== 'other'" class="tx-method">{{ getPaymentMethodLabel(tx.payment_method) }}</span>
+                  <span v-if="getAccountName(tx.account_id)" class="tx-account">{{ getAccountName(tx.account_id) }}</span>
+                </div>
               </div>
             </div>
+            <div class="tx-right">
+              <span class="tx-amount" :class="tx.type || 'expense'">
+                {{ (tx.type || 'expense') === 'income' ? '+' : '-' }}${{ Number(tx.amount).toFixed(2) }}
+              </span>
+              <button v-if="isOwner(tx.owner_id)" class="tx-delete" @click="handleRemoveExpense(tx.id)">&times;</button>
+            </div>
           </div>
-          <div class="tx-right">
-            <span class="tx-amount" :class="tx.type || 'expense'">
-              {{ (tx.type || 'expense') === 'income' ? '+' : '-' }}${{ Number(tx.amount).toFixed(2) }}
-            </span>
-            <button v-if="isOwner(tx.owner_id)" class="tx-delete" @click="handleRemoveExpense(tx.id)">&times;</button>
-          </div>
-        </div>
+        </template>
       </div>
     </section>
 
@@ -769,6 +796,20 @@ const formatAmount = (n: number) =>
   padding: 32px 20px;
   color: #6a6a8a;
   font-size: 1rem;
+}
+.date-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6a6a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 12px 4px 6px;
+}
+.tx-account {
+  background: rgba(108, 99, 255, 0.1);
+  color: #8a8aff;
+  padding: 1px 8px;
+  border-radius: 6px;
 }
 .transaction-list { display: flex; flex-direction: column; gap: 6px; }
 .transaction-item {
