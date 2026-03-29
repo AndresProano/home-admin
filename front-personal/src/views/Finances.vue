@@ -65,7 +65,7 @@ const paymentMethods = computed(() => {
 
 /* ─── Computed ─── */
 const currentBalance = computed(() =>
-  listFilter.value === 'shared' ? sharedBalance.value : personalBalance.value
+  periodIncomeTotal.value - periodExpenseTotal.value
 )
 
 const filteredByList = computed(() =>
