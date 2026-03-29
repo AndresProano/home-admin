@@ -31,10 +31,18 @@ export interface FinancePartner {
   status: string
 }
 
+interface Profile {
+  id: string
+  display_name: string | null
+  email: string | null
+  avatar_url: string | null
+}
+
 const accounts = ref<BankAccount[]>([])
 const expenses = ref<Expense[]>([])
 const partner = ref<FinancePartner | null>(null)
 const apiKey = ref<string | null>(null)
+const profilesCache = ref<Record<string, Profile>>({})
 
 export function useFinances() {
   // --- Balances ---
@@ -213,6 +221,21 @@ export function useFinances() {
     expenses.value = expenses.value.filter(e => e.id !== expenseId)
   }
 
+  // --- Profiles ---
+  const loadProfile = async (userId: string) => {
+    if (profilesCache.value[userId]) return
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
+    if (data) profilesCache.value[userId] = data
+  }
+
+  const getDisplayName = (userId: string) => {
+    return profilesCache.value[userId]?.display_name || 'Unknown'
+  }
+
   // --- API Key (for iOS Shortcuts) ---
   const loadApiKey = async (userId: string) => {
     const { data } = await supabase
@@ -254,5 +277,8 @@ export function useFinances() {
     removeExpense,
     loadApiKey,
     generateApiKey,
+    loadProfile,
+    getDisplayName,
+    profilesCache,
   }
 }

@@ -12,6 +12,7 @@ const {
   loadPartner, createPartnerInvite, joinPartner, removePartner,
   loadAccounts, loadExpenses, addAccount, removeAccount, addExpense, removeExpense,
   loadApiKey, generateApiKey,
+  loadProfile, getDisplayName,
 } = useFinances()
 
 /* ─── View state (persisted) ─── */
@@ -67,7 +68,11 @@ const paymentMethods = computed(() => {
 })
 
 /* ─── Computed ─── */
-const currentBalance = computed(() =>
+const accountsTotal = computed(() =>
+  filteredAccounts.value.reduce((sum, a) => sum + Number(a.balance), 0)
+)
+
+const periodNet = computed(() =>
   periodIncomeTotal.value - periodExpenseTotal.value
 )
 
@@ -193,8 +198,14 @@ onMounted(async () => {
   detectApplePay()
   await waitForAuth()
   if (user.value) {
+    await loadProfile(user.value.id)
     await loadPartner(user.value.id)
     await Promise.all([loadAccounts(), loadExpenses(), loadApiKey(user.value.id)])
+    // Load partner's profile if linked
+    if (partner.value) {
+      const partnerId = partner.value.user_a === user.value.id ? partner.value.user_b : partner.value.user_a
+      if (partnerId) await loadProfile(partnerId)
+    }
   }
 })
 
@@ -311,11 +322,14 @@ const formatAmount = (n: number) =>
 
     <!-- Total Section -->
     <section class="total-section">
-      <span class="total-label">Total</span>
+      <span class="total-label">Bank Total</span>
       <div class="total-amount-row">
-        <span class="balance-dot" :class="{ negative: currentBalance <= 0, positive: currentBalance > 0 }"></span>
-        <span class="big-amount">{{ Math.abs(Math.floor(currentBalance)).toLocaleString() }}</span>
+        <span class="balance-dot" :class="{ negative: accountsTotal <= 0, positive: accountsTotal > 0 }"></span>
+        <span class="big-amount">{{ Math.abs(Math.floor(accountsTotal)).toLocaleString() }}</span>
         <span class="currency-symbol">$</span>
+      </div>
+      <div class="period-net" :class="{ negative: periodNet < 0, positive: periodNet > 0 }">
+        {{ periodNet >= 0 ? '+' : '' }}${{ formatAmount(periodNet) }} this period
       </div>
     </section>
 
@@ -425,7 +439,7 @@ const formatAmount = (n: number) =>
         <div class="drawer-section">
           <h3>Finance Partner</h3>
           <div v-if="partner && partner.status === 'active'" class="partner-active">
-            <p>Partner linked</p>
+            <p>Linked with {{ getDisplayName(partner.user_a === user?.id ? partner.user_b : partner.user_a) }}</p>
             <button class="danger-btn" @click="handleRemovePartner">Unlink Partner</button>
           </div>
           <div v-else-if="partner && partner.status === 'pending'">
@@ -466,7 +480,7 @@ const formatAmount = (n: number) =>
           <div v-for="acc in filteredAccounts" :key="acc.id" class="account-item">
             <div>
               <strong>{{ acc.name }}</strong>
-              <small v-if="!isOwner(acc.owner_id)" class="partner-tag">Partner's</small>
+              <small v-if="!isOwner(acc.owner_id)" class="partner-tag">{{ getDisplayName(acc.owner_id) }}</small>
             </div>
             <div class="account-right">
               <span :class="{ negative: Number(acc.balance) < 0 }">${{ Number(acc.balance).toFixed(2) }}</span>
@@ -605,6 +619,13 @@ const formatAmount = (n: number) =>
 
 /* ── Total ── */
 .total-section { margin-bottom: 16px; }
+.period-net {
+  font-size: 0.9rem;
+  margin-top: 6px;
+  color: #6a6a8a;
+}
+.period-net.negative { color: #ff6b6b; }
+.period-net.positive { color: #4ecdc4; }
 .total-label {
   font-size: 0.95rem;
   color: #6a6a8a;
