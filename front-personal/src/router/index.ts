@@ -1,46 +1,30 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { supabase } from '@/lib/supabaseClient'
-import Home from '../views/Home.vue'
-import Finances from '../views/Finances.vue'
-import Budgets from '../views/Budgets.vue'
-import login from '../views/loginView.vue'
+import Inicio from '../views/Finances.vue'
+import Presupuestos from '../views/Budgets.vue'
+import Movimientos from '../views/Movimientos.vue'
+import Ajustes from '../views/Ajustes.vue'
+import Login from '../views/loginView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    {
-      path: '/',
-      name: 'login',
-      component: login,
-    },
-    {
-      path: '/home',
-      name: 'Home',
-      component: Home,
-      meta: { requiresAuth: true },
-    },
-    {
-      path: '/finances',
-      name: 'Finances',
-      component: Finances,
-      meta: { requiresAuth: true },
-    },
-    {
-      path: '/presupuestos',
-      name: 'Presupuestos',
-      component: Budgets,
-      meta: { requiresAuth: true },
-    },
+    { path: '/', name: 'login', component: Login },
+    { path: '/home', redirect: '/finances' },
+    { path: '/finances', name: 'Inicio', component: Inicio, meta: { requiresAuth: true } },
+    { path: '/presupuestos', name: 'Presupuestos', component: Presupuestos, meta: { requiresAuth: true } },
+    { path: '/movimientos', name: 'Movimientos', component: Movimientos, meta: { requiresAuth: true } },
+    { path: '/ajustes', name: 'Ajustes', component: Ajustes, meta: { requiresAuth: true } },
+    { path: '/:pathMatch(.*)*', redirect: '/finances' },
   ],
+  scrollBehavior: () => ({ top: 0 }),
 })
 
-// Auth guard
+// Guardia de sesión
 router.beforeEach(async (to) => {
   if (to.meta.requiresAuth) {
     const { data } = await supabase.auth.getSession()
-    if (!data.session) {
-      return { name: 'login' }
-    }
+    if (!data.session) return { name: 'login' }
   }
   return true
 })

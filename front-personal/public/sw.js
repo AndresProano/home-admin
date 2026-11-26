@@ -2,7 +2,7 @@
 // - Páginas: red primero; sin conexión, la última versión guardada.
 // - /assets/ (archivos con hash de Vite): caché primero, nunca cambian.
 // - Supabase y otros dominios: no se tocan (los datos siempre van en vivo).
-const CACHE = 'finanzas-v1'
+const CACHE = 'finanzas-v2'
 const BASE = new URL('./', self.location).pathname // "/home-admin/"
 
 self.addEventListener('install', (event) => {

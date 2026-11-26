@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import './assets/tema.css'
 import App from './App.vue'
 import route from './router'
 
