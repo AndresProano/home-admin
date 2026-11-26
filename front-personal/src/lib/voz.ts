@@ -40,32 +40,90 @@ const CLAVES: [string, string[]][] = [
   ['Comisiones', ['comision', 'cargo bancario', 'mantenimiento de cuenta']],
 ]
 
-const NUMEROS: Record<string, number> = {
-  un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
-  once: 11, doce: 12, trece: 13, catorce: 14, quince: 15, dieciseis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19,
-  veinte: 20, treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90, cien: 100,
+/** Valor de cada palabra-número en español (sin tildes) */
+const PALABRAS_NUM: Record<string, number> = {
+  un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9,
+  diez: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15, dieciseis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19,
+  veinte: 20, veintiun: 21, veintiuno: 21, veintiuna: 21, veintidos: 22, veintitres: 23, veinticuatro: 24, veinticinco: 25,
+  veintiseis: 26, veintisiete: 27, veintiocho: 28, veintinueve: 29,
+  treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90,
+  cien: 100, ciento: 100, doscientos: 200, doscientas: 200, trescientos: 300, trescientas: 300, cuatrocientos: 400,
+  quinientos: 500, quinientas: 500, seiscientos: 600, setecientos: 700, ochocientos: 800, novecientos: 900,
+  mil: 1000,
 }
-const DIAS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado']
+const MONEDA = new Set(['dolar', 'dolares', 'usd', '$', 'pesos', 'plata'])
+const ARTICULOS = new Set(['un', 'uno', 'una'])
 
-/** "12,50" · "12.50" · "12 dólares con 50" · "doce dólares" · "$1.234,56" */
-function leerMonto(t: string): { valor: number | null; quitar: RegExp[] } {
-  // "X dólares con Y (centavos)"
-  let m = t.match(/(\d+)\s*(?:dolares?|usd|\$)\s*(?:con|y)\s*(\d{1,2})\b(?:\s*centavos?)?/)
-  if (m) return { valor: Number(m[1]) + Number(m[2]) / 100, quitar: [new RegExp(m[0].replace(/[$.*+?^()|[\]\\]/g, '\\$&'))] }
-  // número con decimales o miles
-  m = t.match(/\$?\s*(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(?:dolares?|usd|\$)?/)
-  if (m) {
-    let tok = m[1]!
-    const dec = tok.match(/[.,](\d{1,2})$/)
-    const n = dec ? Number(tok.slice(0, -dec[0].length).replace(/[.,]/g, '') + '.' + dec[1]) : Number(tok.replace(/[.,]/g, ''))
-    return { valor: Number.isFinite(n) ? n : null, quitar: [new RegExp(m[0].replace(/[$.*+?^()|[\]\\]/g, '\\$&'))] }
-  }
-  // número en palabras: "veinte dólares", "treinta y cinco"
-  const palabras = Object.keys(NUMEROS).sort((a, b) => b.length - a.length).join('|')
-  m = t.match(new RegExp(`\\b(${palabras})(?:\\s+y\\s+(${palabras}))?\\b\\s*(?:dolares?|usd)`))
-  if (m) return { valor: NUMEROS[m[1]!]! + (m[2] ? NUMEROS[m[2]]! : 0), quitar: [new RegExp(m[0])] }
-  return { valor: null, quitar: [] }
+/** "12,50" · "1.234,56" · "$45.20" → número */
+const leerDigitos = (tok: string): number | null => {
+  const t = tok.replace(/^\$/, '').replace(/\$$/, '')
+  if (!/^\d[\d.,]*$/.test(t)) return null
+  const limpio = t.replace(/[.,]+$/, '')
+  const dec = limpio.match(/[.,](\d{1,2})$/)
+  const n = dec ? Number(limpio.slice(0, -dec[0].length).replace(/[.,]/g, '') + '.' + dec[1]) : Number(limpio.replace(/[.,]/g, ''))
+  return Number.isFinite(n) ? n : null
 }
+
+/** Lee un número (dígitos o palabras: "ciento veinte", "treinta y cinco", "dos mil trescientos") desde la posición i */
+const leerNumero = (toks: string[], i: number): { valor: number; fin: number } | null => {
+  const d = leerDigitos(toks[i] ?? '')
+  if (d != null) return { valor: d, fin: i + 1 }
+  let total = 0, actual = 0, j = i, vistos = 0
+  let ultimo = Infinity // en español van de mayor a menor: "ciento veinte cinco"; si sube, es otro número ("tres cincuenta")
+  while (j < toks.length) {
+    const w = toks[j]!
+    if (w === 'y' && vistos && PALABRAS_NUM[toks[j + 1] ?? ''] != null && actual % 10 === 0 && actual >= 20 && (PALABRAS_NUM[toks[j + 1]!]! < 10)) { j++; continue }
+    const v = PALABRAS_NUM[w]
+    if (v == null) break
+    if (w === 'mil') { total += (actual || 1) * 1000; actual = 0; ultimo = Infinity }
+    else {
+      if (v >= ultimo) break
+      actual += v
+      ultimo = v
+    }
+    vistos++; j++
+  }
+  return vistos ? { valor: total + actual, fin: j } : null
+}
+
+/**
+ * Monto en la frase: "cinco", "12,50", "5 con 50", "doce dólares con treinta", "tres cincuenta",
+ * "cincuenta centavos", "un dólar". Devuelve el valor y el texto sin las palabras del monto.
+ */
+function leerMonto(t: string): { valor: number | null; resto: string } {
+  const toks = t.split(' ').filter(Boolean)
+  for (let i = 0; i < toks.length; i++) {
+    const w = toks[i]!
+    if (leerDigitos(w) == null && PALABRAS_NUM[w] == null) continue
+    // "un/una" solo cuentan como número si les sigue moneda o "mil" ("un dólar", "un mil"), no en "una cena"
+    if (ARTICULOS.has(w) && !MONEDA.has(toks[i + 1] ?? '') && toks[i + 1] !== 'mil') continue
+    const n = leerNumero(toks, i)
+    if (!n) continue
+    let valor = n.valor
+    let fin = n.fin
+    if (MONEDA.has(toks[fin] ?? '')) fin++
+    if (toks[fin] === 'centavos' || toks[fin] === 'centavo') {           // "cincuenta centavos"
+      valor = valor / 100
+      fin++
+    } else {
+      // centavos: "con 50", "con cincuenta", "y treinta centavos", o "tres cincuenta" (pegado, < 100)
+      const conector = toks[fin] === 'con' || (toks[fin] === 'y' && /centavo/.test(toks.slice(fin, fin + 4).join(' ')))
+      const k = conector ? fin + 1 : fin
+      const c = (conector || valor < 1000) ? leerNumero(toks, k) : null
+      const pegadoValido = !conector && c && c.valor >= 10 && c.valor < 100 && Number.isInteger(valor) && leerDigitos(toks[k] ?? '') == null
+      if (c && c.valor < 100 && (conector || pegadoValido)) {
+        valor = Math.trunc(valor) + c.valor / 100
+        fin = c.fin
+        if (toks[fin] === 'centavos' || toks[fin] === 'centavo') fin++
+      }
+    }
+    const resto = [...toks.slice(0, i), ...toks.slice(fin)].join(' ')
+    return { valor: Math.round(valor * 100) / 100, resto }
+  }
+  return { valor: null, resto: t }
+}
+
+const DIAS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado']
 
 function leerFecha(t: string, hoyRef: Date): { fecha: string; quitar: RegExp | null } {
   const d = new Date(hoyRef)
@@ -135,7 +193,7 @@ export function interpretarVoz(texto: string, cuentas: CuentaVoz[], hoyRef = new
   const fecha = leerFecha(t, hoyRef)
   if (fecha.quitar) t = t.replace(fecha.quitar, ' ')
   const monto = leerMonto(t)
-  monto.quitar.forEach(r => { t = t.replace(r, ' ') })
+  t = monto.resto
   const cuenta = leerCuenta(t, cuentas)
   cuenta.quitar.forEach(r => { t = t.replace(r, ' ') })
   const categoria = tipo === 'income' ? (leerCategoria(t) ?? 'Otros') : leerCategoria(t)
@@ -148,7 +206,11 @@ export function interpretarVoz(texto: string, cuentas: CuentaVoz[], hoyRef = new
     .replace(/\s+/g, ' ')
     .trim()
   const limpia = desc.replace(/^(en|de|por|para|con|el|la)\s+/, '').trim()
-  const descripcion = limpia ? limpia.charAt(0).toUpperCase() + limpia.slice(1) : (categoria ?? (tipo === 'income' ? 'Ingreso' : 'Gasto'))
+  // recuperar las palabras como se dijeron (con tildes): "cafe" → "café"
+  const originales = new Map<string, string>()
+  for (const w of texto.replace(/[¿?¡!.,]/g, ' ').split(/\s+/)) if (w) originales.set(norm(w), w.toLowerCase())
+  const conTildes = limpia.split(' ').map(w => originales.get(w) ?? w).join(' ')
+  const descripcion = conTildes ? conTildes.charAt(0).toUpperCase() + conTildes.slice(1) : (categoria ?? (tipo === 'income' ? 'Ingreso' : 'Gasto'))
 
   return { monto: monto.valor, tipo, categoria, cuentaId: cuenta.cuentaId, fecha: fecha.fecha, descripcion }
 }
