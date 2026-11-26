@@ -5,12 +5,13 @@ import Icono from '@/components/Icono.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useFinances } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
-import { dinero } from '@/lib/fechas'
+import { dinero, fechaLarga } from '@/lib/fechas'
+import type { Lectura } from '@/lib/excel'
 import { CATEGORIAS } from '@/lib/categorias'
 
 const router = useRouter()
 const { user, signOut } = useAuth()
-const { accounts, partner, apiKey, addAccount, removeAccount, createPartnerInvite, joinPartner, removePartner,
+const { accounts, expenses, importarMovimientos, partner, apiKey, addAccount, removeAccount, createPartnerInvite, joinPartner, removePartner,
   generateApiKey, getDisplayName } = useFinances()
 const { cargar, olvidarCarga, parejaId, tienePareja, nombreDe, esMio } = useApp()
 
@@ -77,6 +78,53 @@ const cambiarClave = async () => {
   if (!confirm('¿Cambiar tu clave? La actual deja de funcionar al instante: tendrás que pegar la nueva en el atajo.')) return
   await generateApiKey()
   claveCambiada.value = true
+}
+
+/* Excel */
+const ocupado = ref(false)
+const lectura = ref<Lectura | null>(null)
+const afectarSaldos = ref(false)
+const mensajeExcel = ref('')
+const errorExcel = ref(false)
+const avisar = (m: string, err = false) => { mensajeExcel.value = m; errorExcel.value = err }
+const bajarPlantilla = async () => {
+  ocupado.value = true
+  try { (await import('@/lib/excel')).descargarPlantilla(accounts.value.filter(a => esMio(a.owner_id))) }
+  catch (e: any) { avisar('No se pudo crear la plantilla: ' + (e.message ?? e), true) }
+  finally { ocupado.value = false }
+}
+const bajarMovimientos = async () => {
+  ocupado.value = true
+  try { (await import('@/lib/excel')).exportarMovimientos(expenses.value.filter(e => esMio(e.owner_id)), accounts.value) }
+  catch (e: any) { avisar('No se pudo exportar: ' + (e.message ?? e), true) }
+  finally { ocupado.value = false }
+}
+const elegirArchivo = async (ev: Event) => {
+  const input = ev.target as HTMLInputElement
+  const archivo = input.files?.[0]
+  input.value = ''
+  if (!archivo || !user.value) return
+  ocupado.value = true
+  avisar('')
+  lectura.value = null
+  try {
+    lectura.value = await (await import('@/lib/excel')).leerArchivo(archivo, accounts.value, user.value.id)
+    if (!lectura.value.filas.length) avisar('No encontré movimientos para importar en ese archivo.', true)
+  } catch (e: any) {
+    avisar(e.message ?? 'No se pudo leer el archivo', true)
+  } finally { ocupado.value = false }
+}
+const importar = async () => {
+  if (!lectura.value) return
+  ocupado.value = true
+  try {
+    const n = await importarMovimientos(lectura.value.filas, afectarSaldos.value)
+    avisar(`¡Listo! Se importaron ${n} movimientos.${afectarSaldos.value ? ' Los saldos de tus cuentas se actualizaron.' : ''}`)
+    lectura.value = null
+    afectarSaldos.value = false
+  } catch (e: any) {
+    avisar('No se pudo importar: ' + (e.message ?? e), true)
+  } finally { ocupado.value = false }
 }
 
 const salir = async () => {
@@ -209,6 +257,47 @@ const salir = async () => {
       <button v-else class="btn primario" @click="generarClave">Generar mi API key</button>
     </section>
 
+    <!-- Importar / exportar -->
+    <section class="bloque seccion" style="background: var(--lima)">
+      <h2 class="subtitulo" style="margin: 0">Importar desde Excel</h2>
+      <p style="margin: 0">¿Llevabas tus gastos en otra app o en una hoja? Pásalos a la plantilla y súbela.</p>
+      <ol class="pasos">
+        <li><button class="btn" style="background: #fff; width: 100%" :disabled="ocupado" @click="bajarPlantilla">Descargar plantilla de Excel</button></li>
+        <li>Llénala (fecha, descripción, monto, tipo, categoría, cuenta). La hoja “Instrucciones” trae tus categorías y cuentas.</li>
+        <li>
+          <label class="btn primario subir">
+            {{ ocupado ? 'Leyendo…' : 'Subir mi Excel' }}
+            <input type="file" accept=".xlsx,.xls,.csv,.numbers,.ods" @change="elegirArchivo" :disabled="ocupado" />
+          </label>
+        </li>
+      </ol>
+
+      <div v-if="lectura" class="bloque" style="background: #fff; display: flex; flex-direction: column; gap: 10px">
+        <strong>{{ lectura.filas.length }} movimientos listos para importar</strong>
+        <span v-if="lectura.desde" class="muted" style="color: var(--tinta)">Del {{ fechaLarga(lectura.desde) }} al {{ fechaLarga(lectura.hasta!) }} · gastos ${{ dinero(lectura.gastos) }} · ingresos ${{ dinero(lectura.ingresos) }}</span>
+        <details v-if="lectura.avisos.length">
+          <summary class="resumen-lista">{{ lectura.avisos.length }} con ajustes</summary>
+          <ul class="lista-avisos"><li v-for="a in lectura.avisos.slice(0, 30)" :key="a">{{ a }}</li></ul>
+        </details>
+        <details v-if="lectura.omitidas.length">
+          <summary class="resumen-lista rojo">{{ lectura.omitidas.length }} filas que no se pueden importar</summary>
+          <ul class="lista-avisos"><li v-for="o in lectura.omitidas.slice(0, 30)" :key="o">{{ o }}</li></ul>
+        </details>
+        <label class="check">
+          <input v-model="afectarSaldos" type="checkbox" />
+          <span>Sumar y restar estos movimientos en el saldo de mis cuentas<br>
+            <span class="muted" style="font-weight: 500">Déjalo apagado si es historial viejo y tus cuentas ya tienen el saldo de hoy.</span></span>
+        </label>
+        <div class="acciones">
+          <button class="btn" @click="lectura = null">Cancelar</button>
+          <button class="btn primario" :disabled="ocupado || !lectura.filas.length" @click="importar">Importar {{ lectura.filas.length }}</button>
+        </div>
+      </div>
+      <p v-if="mensajeExcel" class="bloque" style="margin: 0; background: #fff" :class="{ rojo: errorExcel }">{{ mensajeExcel }}</p>
+
+      <button class="btn" style="background: #fff" :disabled="ocupado || !expenses.length" @click="bajarMovimientos">Descargar mis movimientos (Excel)</button>
+    </section>
+
     <!-- Sesión -->
     <section class="bloque seccion">
       <h2 class="subtitulo" style="margin: 0">Tu cuenta</h2>
@@ -238,5 +327,9 @@ code { font-size: 12px; background: rgba(255, 255, 255, 0.7); border: 1.5px soli
 .sub { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .manual summary { font-weight: 700; cursor: pointer; min-height: 44px; display: flex; align-items: center; }
 .manual { border-top: var(--borde); padding-top: 6px; }
+.subir { position: relative; overflow: hidden; width: 100%; cursor: pointer; }
+.subir input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.resumen-lista { font-weight: 700; cursor: pointer; min-height: 36px; display: flex; align-items: center; }
+.lista-avisos { margin: 4px 0 0; padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
 .mini { min-height: 34px; padding: 0 10px; font-size: 12px; margin: 4px 0; background: #fff; }
 </style>
