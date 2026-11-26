@@ -45,6 +45,13 @@ export function useApp() {
   }
   const olvidarCarga = () => { carga = null }
 
+  /** Foto de Google de un usuario (la propia sale de la sesión; la de la pareja, de su perfil) */
+  const fotoDe = (id: string) => {
+    const meta = id === user.value?.id ? (user.value?.user_metadata ?? {}) : {}
+    return (fin.profilesCache.value[id]?.avatar_url as string | null | undefined)
+      ?? (meta.avatar_url as string | undefined) ?? (meta.picture as string | undefined) ?? null
+  }
+
   const nombreDe = (id: string) => id === user.value?.id ? 'Tú' : fin.getDisplayName(id).split(' ')[0] ?? ''
   const esMio = (ownerId: string) => ownerId === user.value?.id
 
@@ -72,7 +79,7 @@ export function useApp() {
   const cerrarHoja = () => { hoja.value = null }
 
   return {
-    lista, compartido, parejaId, tienePareja, cargar, olvidarCarga, nombreDe, esMio,
+    lista, compartido, parejaId, tienePareja, cargar, olvidarCarga, nombreDe, fotoDe, esMio,
     hoja, colaClasificar, abrirClasificar, siguienteDeCola, abrirNuevo, abrirMovimiento, saltar, cerrarHoja,
   }
 }

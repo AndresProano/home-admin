@@ -16,12 +16,15 @@ import { infoSubtipo, esDeuda, deudaDe } from '@/lib/cuentas'
  *  - 'nuevo': registrar a mano (botón + de la barra)
  */
 const { user } = useAuth()
-const { accounts, budgets, expenses, addExpense, updateExpense, removeExpense } = useFinances()
+const { accounts, budgets, expenses, addExpense, updateExpense, removeExpense, comisionDe } = useFinances()
 const { hoja, compartido, tienePareja, colaClasificar, siguienteDeCola, saltar, cerrarHoja } = useApp()
 
 const tipo = ref<'expense' | 'income' | 'transfer'>('expense')
 /** transferencias: cuenta de destino */
 const hacia = ref<string | undefined>(undefined)
+/** comisión interbancaria (solo al crear una transferencia) */
+const cobrarComision = ref(false)
+const montoComision = ref<number | null>(null)
 const descripcion = ref('')
 const monto = ref<number | null>(null)
 const categoria = ref('')
@@ -43,6 +46,8 @@ const cargar = () => {
   const p = hoja.value.prellenado ?? {}
   tipo.value = (m?.type as 'expense' | 'income' | 'transfer') || (p.type as 'expense' | 'income' | 'transfer') || 'expense'
   hacia.value = m?.to_account_id ?? p.to_account_id ?? undefined
+  cobrarComision.value = false
+  montoComision.value = null
   descripcion.value = m && !m.needs_review ? m.description : (p.description ?? '')
   monto.value = m ? Number(m.amount) : (p.amount ?? null)
   categoria.value = m && m.category !== SIN_CLASIFICAR ? m.category : (p.category ?? '')
@@ -125,6 +130,27 @@ const guardar = async () => {
   }
 }
 
+/** Pago de tarjeta: cuánto se debe hoy en la cuenta de destino */
+const deudaDestino = computed(() => {
+  const b = accounts.value.find(c => c.id === hacia.value)
+  return tipo.value === 'transfer' && b && esDeuda(b) ? deudaDe(b) : 0
+})
+
+const normEnt = (s?: string | null) => (s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/^(banco( de| del)?|cooperativa)\s+/, '').trim()
+/** Las dos cuentas son de bancos distintos (y ninguna es efectivo) */
+const esInterbancaria = computed(() => {
+  const a = accounts.value.find(c => c.id === cuenta.value)
+  const b = accounts.value.find(c => c.id === hacia.value)
+  if (!a || !b || a.subtipo === 'efectivo' || b.subtipo === 'efectivo') return false
+  const ea = normEnt(a.entidad), eb = normEnt(b.entidad)
+  return !!ea && !!eb && ea !== eb
+})
+watch([cuenta, hacia, tipo], () => {
+  if (tipo.value !== 'transfer' || modo.value !== 'nuevo') return
+  cobrarComision.value = esInterbancaria.value
+  if (montoComision.value == null && user.value) montoComision.value = comisionDe(user.value.id)
+})
+
 const guardarTransferencia = async () => {
   if (!user.value || !monto.value) return
   if (!cuenta.value) { error.value = 'Elige desde qué cuenta sale'; return }
@@ -142,10 +168,21 @@ const guardarTransferencia = async () => {
     is_shared: false,
     payment_method: 'transfer',
   }
+  const comision = modo.value === 'nuevo' && cobrarComision.value ? Number(montoComision.value || 0) : 0
+  const origen = accounts.value.find(c => c.id === cuenta.value)
   guardando.value = true
   try {
-    if (modo.value === 'nuevo') await addExpense(user.value.id, datos)
-    else if (mov.value) await updateExpense(mov.value.id, { ...datos, needs_review: false })
+    if (modo.value === 'nuevo') {
+      await addExpense(user.value.id, datos)
+      // la comisión del banco va como un gasto aparte, desde la cuenta de origen
+      if (comision > 0) {
+        await addExpense(user.value.id, {
+          type: 'expense', category: 'Comisiones', amount: comision, date: fecha.value,
+          description: `Comisión transferencia ${origen?.name ?? ''} → ${destino?.name ?? ''}`.trim(),
+          account_id: cuenta.value, to_account_id: null, is_shared: false, payment_method: 'transfer',
+        })
+      }
+    } else if (mov.value) await updateExpense(mov.value.id, { ...datos, needs_review: false })
     cerrarHoja()
   } catch (e: any) {
     error.value = 'No se pudo guardar: ' + (e.message ?? e)
@@ -186,9 +223,13 @@ const borrar = async () => {
           <button type="button" :class="{ on: tipo === 'transfer' }" @click="tipo = 'transfer'">Transferir</button>
         </div>
         <label class="campo monto">
-          Monto
+          {{ deudaDestino > 0 ? 'Monto a pagar' : 'Monto' }}
           <input v-model.number="monto" type="number" step="0.01" min="0.01" placeholder="$0,00" inputmode="decimal" />
         </label>
+        <div v-if="deudaDestino > 0" class="chips" style="margin-top: -6px">
+          <button type="button" class="chip" :class="{ on: monto === deudaDestino }" @click="monto = deudaDestino">Pagar todo (${{ dinero(deudaDestino) }})</button>
+          <button type="button" class="chip" :class="{ on: !!monto && monto !== deudaDestino }" @click="monto = null">Otro monto</button>
+        </div>
       </template>
 
       <div v-if="tipo !== 'transfer'">
@@ -250,6 +291,18 @@ const borrar = async () => {
             </button>
           </div>
         </div>
+        <div v-if="modo === 'nuevo' && cuenta && hacia" class="bloque comision" :class="{ activa: cobrarComision }">
+          <label class="interruptor">
+            <input v-model="cobrarComision" type="checkbox" />
+            <span class="pista" aria-hidden="true"></span>
+            <span><strong>Comisión {{ esInterbancaria ? 'interbancaria' : 'del banco' }}</strong><br>
+              <span class="muted">{{ esInterbancaria ? 'Son bancos distintos: se registra como gasto en "Comisiones".' : 'Mismo banco: normalmente no cobran.' }}</span></span>
+          </label>
+          <label v-if="cobrarComision" class="campo">
+            Monto de la comisión ($)
+            <input v-model.number="montoComision" type="number" step="0.01" min="0" inputmode="decimal" />
+          </label>
+        </div>
       </template>
 
       <label v-if="tienePareja && tipo !== 'transfer'" class="interruptor">
@@ -306,6 +359,8 @@ const borrar = async () => {
 .tipo.disponible { background: var(--cielo); }
 .tipo.ahorro { background: var(--lima); }
 .tipo.deuda { background: var(--durazno); }
+.comision { display: flex; flex-direction: column; gap: 10px; }
+.comision.activa { background: var(--neutro); }
 .flecha-transfer { display: flex; justify-content: center; color: var(--gris); margin: -4px 0; }
 .impacto { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
 </style>

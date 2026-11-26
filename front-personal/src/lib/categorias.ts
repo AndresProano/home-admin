@@ -11,6 +11,7 @@ export const CATEGORIAS = [
   { nombre: 'Compras', color: 'var(--rosa)' },
   { nombre: 'Educación', color: 'var(--cielo)' },
   { nombre: 'Suscripciones', color: 'var(--amarillo)' },
+  { nombre: 'Comisiones', color: 'var(--neutro)' },
   { nombre: 'Otros', color: 'var(--neutro)' },
 ] as const
 
