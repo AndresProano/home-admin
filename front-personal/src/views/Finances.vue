@@ -1,79 +1,106 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
-import { useFinances } from '@/composables/useFinances'
+import { useFinances, type Expense, type NewExpense } from '@/composables/useFinances'
+import MovimientoSheet from '@/components/MovimientoSheet.vue'
+import { iconoDe, TOTAL } from '@/lib/categorias'
+import { aISO, hoy, ayer, fechaLarga, dinero } from '@/lib/fechas'
+import { estadoPresupuesto } from '@/lib/presupuesto'
 
 const router = useRouter()
+const route = useRoute()
 const { user, waitForAuth } = useAuth()
 const {
-  accounts, expenses, partner, apiKey,
-  personalBalance, sharedBalance,
+  accounts, expenses, budgets, partner, apiKey, pendingReview,
   loadPartner, createPartnerInvite, joinPartner, removePartner,
-  loadAccounts, loadExpenses, addAccount, removeAccount, addExpense, removeExpense,
+  loadAccounts, loadExpenses, loadBudgets, addAccount, removeAccount,
+  addExpense, updateExpense, removeExpense,
   loadApiKey, generateApiKey,
   loadProfile, getDisplayName,
 } = useFinances()
 
-/* ─── View state (persisted) ─── */
-const timePeriod = ref<'week' | 'month' | 'year' | 'all'>((localStorage.getItem('fin_timePeriod') as any) || 'month')
-const listFilter = ref<'personal' | 'shared'>((localStorage.getItem('fin_listFilter') as any) || 'personal')
+/* ─── localStorage seguro (modo privado de Safari puede fallar) ─── */
+const leer = (k: string, def: string) => { try { return localStorage.getItem(k) || def } catch { return def } }
+const guardarLS = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* sin storage */ } }
+
+/* ─── Estado de la vista ─── */
+const timePeriod = ref<'week' | 'month' | 'year' | 'all'>(leer('fin_timePeriod', 'month') as any)
+const listFilter = ref<'personal' | 'shared'>(leer('fin_listFilter', 'personal') as any)
 const showSettings = ref(false)
-const showAddForm = ref(false)
 const showSearch = ref(false)
 const searchQuery = ref('')
 
-watch(timePeriod, v => localStorage.setItem('fin_timePeriod', v))
-watch(listFilter, v => localStorage.setItem('fin_listFilter', v))
+watch(timePeriod, v => guardarLS('fin_timePeriod', v))
+watch(listFilter, v => guardarLS('fin_listFilter', v))
 
-/* ─── Apple Pay ─── */
-const isApplePayAvailable = ref(false)
-const showApplePayBanner = ref(!localStorage.getItem('fin_applePayDismissed'))
+/* ─── Hoja de movimiento (nuevo / editar / clasificar) ─── */
+const hoja = ref<{ modo: 'nuevo' | 'editar' | 'clasificar'; movimiento: Expense | null; prellenado?: Partial<NewExpense> } | null>(null)
+const saltados = ref<Set<string>>(new Set())
 
-/* ─── Voice ─── */
+const colaClasificar = computed(() => pendingReview.value.filter(e => !saltados.value.has(e.id)))
+
+const abrirClasificar = () => {
+  saltados.value = new Set()
+  const primero = colaClasificar.value[0]
+  if (primero) hoja.value = { modo: 'clasificar', movimiento: primero }
+}
+const siguienteDeCola = () => {
+  const sig = colaClasificar.value[0]
+  hoja.value = sig ? { modo: 'clasificar', movimiento: sig } : null
+}
+const abrirNuevo = (prellenado?: Partial<NewExpense>) => { hoja.value = { modo: 'nuevo', movimiento: null, prellenado } }
+const abrirMovimiento = (tx: Expense) => {
+  if (!isOwner(tx.owner_id)) return
+  hoja.value = { modo: tx.needs_review ? 'clasificar' : 'editar', movimiento: tx }
+}
+
+const onGuardar = async (datos: NewExpense & { needs_review: boolean }) => {
+  if (!user.value || !hoja.value) return
+  const { modo, movimiento } = hoja.value
+  try {
+    if (modo === 'nuevo') {
+      await addExpense(user.value.id, datos)
+      hoja.value = null
+    } else if (movimiento) {
+      await updateExpense(movimiento.id, datos)
+      if (modo === 'clasificar') siguienteDeCola()
+      else hoja.value = null
+    }
+  } catch (e: any) {
+    alert('No se pudo guardar: ' + (e.message ?? e))
+  }
+}
+const onSaltar = () => {
+  if (hoja.value?.movimiento) saltados.value.add(hoja.value.movimiento.id)
+  siguienteDeCola()
+}
+const onBorrar = async () => {
+  const m = hoja.value?.movimiento
+  if (!m || !confirm('¿Borrar este movimiento?')) return
+  await removeExpense(m.id)
+  hoja.value = null
+}
+
+/* ─── Voz ─── */
 const isListening = ref(false)
 
-/* ─── Partner ─── */
+/* ─── Pareja ─── */
 const partnerMode = ref<'create' | 'join'>('join')
 const partnerInviteCode = ref('')
 const partnerError = ref('')
 
-/* ─── Account form ─── */
+/* ─── Cuentas ─── */
 const showAccountForm = ref(false)
 const newAccountName = ref('')
 const newAccountBalance = ref(0)
 
-/* ─── Transaction form ─── */
-const newExpDesc = ref('')
-const newExpAmount = ref<number | null>(null)
-const newExpCategory = ref('Food')
-const newExpDate = ref(new Date().toISOString().slice(0, 10))
-const newExpAccount = ref<string | null>(null)
-const newExpType = ref<'expense' | 'income'>('expense')
-const newExpPaymentMethod = ref('cash')
-
-const categories = ['Food', 'Transport', 'Utilities', 'Rent', 'Entertainment', 'Health', 'Shopping', 'Education', 'Other']
-
-const paymentMethods = computed(() => {
-  const methods = [
-    { value: 'cash', label: 'Cash' },
-    { value: 'card', label: 'Card' },
-    { value: 'bank_transfer', label: 'Bank Transfer' },
-    { value: 'other', label: 'Other' },
-  ]
-  if (isApplePayAvailable.value) {
-    methods.splice(1, 0, { value: 'apple_pay', label: 'Apple Pay' })
-  }
-  return methods
-})
-
-/* ─── Computed ─── */
-const accountsTotal = computed(() =>
-  accounts.value.reduce((sum, a) => sum + Number(a.balance), 0)
+/* ─── Cálculos ─── */
+const filteredAccounts = computed(() =>
+  accounts.value.filter(a => listFilter.value === 'shared' ? a.is_shared : !a.is_shared)
 )
-
-const periodNet = computed(() =>
-  periodIncomeTotal.value - periodExpenseTotal.value
+const accountsTotal = computed(() =>
+  filteredAccounts.value.reduce((sum, a) => sum + Number(a.balance), 0)
 )
 
 const filteredByList = computed(() =>
@@ -85,12 +112,11 @@ const getTimeStart = () => {
   switch (timePeriod.value) {
     case 'week': {
       const d = new Date(now)
-      d.setDate(d.getDate() - d.getDay())
-      d.setHours(0, 0, 0, 0)
-      return d.toISOString().slice(0, 10)
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7)) // semana empieza el lunes
+      return aISO(d)
     }
-    case 'month': return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
-    case 'year': return new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10)
+    case 'month': return aISO(new Date(now.getFullYear(), now.getMonth(), 1))
+    case 'year': return aISO(new Date(now.getFullYear(), 0, 1))
     case 'all': return '1900-01-01'
   }
 }
@@ -109,18 +135,14 @@ const filteredTransactions = computed(() => {
 })
 
 const groupedTransactions = computed(() => {
-  const groups: { date: string; label: string; transactions: typeof filteredTransactions.value }[] = []
-  const today = new Date().toISOString().slice(0, 10)
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-
+  const groups: { date: string; label: string; transactions: Expense[] }[] = []
+  const h = hoy(), a = ayer()
   for (const tx of filteredTransactions.value) {
     const last = groups[groups.length - 1]
     if (last && last.date === tx.date) {
       last.transactions.push(tx)
     } else {
-      let label = tx.date
-      if (tx.date === today) label = 'Today'
-      else if (tx.date === yesterday) label = 'Yesterday'
+      const label = tx.date === h ? 'Hoy' : tx.date === a ? 'Ayer' : fechaLarga(tx.date)
       groups.push({ date: tx.date, label, transactions: [tx] })
     }
   }
@@ -132,61 +154,56 @@ const periodExpenseTotal = computed(() =>
     .filter(e => (e.type || 'expense') === 'expense')
     .reduce((sum, e) => sum + Number(e.amount), 0)
 )
-
 const periodIncomeTotal = computed(() =>
   filteredByTime.value
     .filter(e => (e.type || 'expense') === 'income')
     .reduce((sum, e) => sum + Number(e.amount), 0)
 )
+const periodNet = computed(() => periodIncomeTotal.value - periodExpenseTotal.value)
 
-const filteredAccounts = computed(() =>
-  accounts.value.filter(a => listFilter.value === 'shared' ? a.is_shared : !a.is_shared)
-)
+const etiquetaPeriodo = computed(() => ({
+  week: 'esta semana', month: 'este mes', year: 'este año', all: 'en total',
+}[timePeriod.value]))
 
-/* ─── Chart ─── */
+/* ─── Presupuestos más ajustados (tarjeta) ─── */
+const presupuestosTop = computed(() => {
+  const compartido = listFilter.value === 'shared'
+  return budgets.value
+    .filter(b => b.is_shared === compartido && (compartido || b.owner_id === user.value?.id))
+    .map(b => estadoPresupuesto(b, expenses.value, new Date()))
+    .sort((a, b) => (a.budget.category === TOTAL ? -1 : b.budget.category === TOTAL ? 1 : b.porcentaje - a.porcentaje))
+    .slice(0, 3)
+})
+
+/* ─── Gráfico (semanas del mes) ─── */
 const chartBars = computed(() => {
   const bars = [0, 0, 0, 0, 0]
   filteredByTime.value
     .filter(e => (e.type || 'expense') === 'expense')
     .forEach(e => {
-      const d = new Date(e.date)
-      const week = Math.min(4, Math.floor((d.getDate() - 1) / 7))
-      bars[week] += Number(e.amount)
+      const dia = Number(e.date.slice(8, 10))
+      bars[Math.min(4, Math.floor((dia - 1) / 7))] += Number(e.amount)
     })
   const max = Math.max(...bars, 1)
   return bars.map(v => ({ height: Math.max(5, (v / max) * 100), value: v }))
 })
-
 const hasData = computed(() => filteredByTime.value.length > 0)
 
-/* ─── Apple Pay Detection ─── */
-const detectApplePay = () => {
-  try {
-    const w = window as any
-    if (w.ApplePaySession && w.ApplePaySession.canMakePayments()) {
-      isApplePayAvailable.value = true
-      showApplePayBanner.value = true
-      newExpPaymentMethod.value = 'apple_pay'
-    }
-  } catch { /* not available */ }
-}
-
-/* ─── Voice Input ─── */
+/* ─── Entrada por voz ─── */
 const startVoiceInput = () => {
   const w = window as any
   const SR = w.SpeechRecognition || w.webkitSpeechRecognition
   if (!SR) {
-    alert('Voice input not supported in this browser.')
+    alert('Este navegador no permite dictar.')
     return
   }
   const recognition = new SR()
-  recognition.lang = 'en-US'
+  recognition.lang = 'es-EC'
   recognition.interimResults = false
   isListening.value = true
 
   recognition.onresult = (event: any) => {
-    const text = event.results[0][0].transcript
-    parseVoiceInput(text)
+    parseVoiceInput(event.results[0][0].transcript)
     isListening.value = false
   }
   recognition.onerror = () => { isListening.value = false }
@@ -194,87 +211,57 @@ const startVoiceInput = () => {
   recognition.start()
 }
 
+// "gasté 12,50 en almuerzo" · "me pagaron 500 de sueldo"
 const parseVoiceInput = (text: string) => {
-  const amountMatch = text.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:dollars?|bucks?|\$)?/i)
-  const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '.')) : null
-  const isIncome = /(?:received|earned|got|income|salary|payment received)/i.test(text)
+  const amountMatch = text.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:d[oó]lares?|\$)?/i)
+  const amount = amountMatch?.[1] ? parseFloat(amountMatch[1].replace(',', '.')) : undefined
+  const isIncome = /(?:me pagaron|recib[ií]|cobr[eé]|gan[eé]|ingreso|sueldo|salario)/i.test(text)
 
   let desc = text
     .replace(amountMatch?.[0] || '', '')
-    .replace(/^(?:i\s+)?(?:spent|paid|bought|earned|received|got)\s+/i, '')
-    .replace(/(?:on|for|at)\s+/i, '')
+    .replace(/^(?:yo\s+)?(?:gast[eé]|pagu[eé]|compr[eé]|me pagaron|recib[ií]|cobr[eé]|gan[eé])\s*/i, '')
+    .replace(/^(?:en|de|por|para)\s+/i, '')
     .trim()
   if (!desc) desc = text
 
-  newExpDesc.value = desc.charAt(0).toUpperCase() + desc.slice(1)
-  if (amount) newExpAmount.value = amount
-  newExpType.value = isIncome ? 'income' : 'expense'
-  showAddForm.value = true
+  abrirNuevo({
+    description: desc.charAt(0).toUpperCase() + desc.slice(1),
+    amount,
+    type: isIncome ? 'income' : 'expense',
+  })
 }
 
-/* ─── Lifecycle ─── */
+/* ─── Inicio ─── */
 onMounted(async () => {
-  detectApplePay()
   await waitForAuth()
-  if (user.value) {
-    await loadProfile(user.value.id)
-    await loadPartner(user.value.id)
-    await Promise.all([loadAccounts(), loadExpenses(), loadApiKey(user.value.id)])
-    // Load partner's profile if linked
-    if (partner.value) {
-      const partnerId = partner.value.user_a === user.value.id ? partner.value.user_b : partner.value.user_a
-      if (partnerId) await loadProfile(partnerId)
-    }
+  if (!user.value) return
+  await loadProfile(user.value.id)
+  await loadPartner(user.value.id)
+  await Promise.all([loadAccounts(), loadExpenses(), loadBudgets(), loadApiKey(user.value.id)])
+  if (partner.value) {
+    const partnerId = partner.value.user_a === user.value.id ? partner.value.user_b : partner.value.user_a
+    if (partnerId) await loadProfile(partnerId)
+  }
+  // El atajo puede abrir .../finances?clasificar=1 para preguntarte de una
+  if (route.query.clasificar) {
+    router.replace({ query: {} })
+    abrirClasificar()
   }
 })
+
+/* ─── Atajo de iPhone ─── */
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const appUrl = `${window.location.origin}${import.meta.env.BASE_URL}finances?clasificar=1`
+
+const copiar = (texto: string | null | undefined) => { if (texto) navigator.clipboard.writeText(texto) }
 
 const handleGenerateApiKey = async () => {
   if (!user.value) return
   await generateApiKey(user.value.id)
 }
 
-const copyApiKey = () => {
-  if (apiKey.value) navigator.clipboard.writeText(apiKey.value)
-}
-
-const copyAnonKey = () => {
-  if (supabaseAnonKey) navigator.clipboard.writeText(supabaseAnonKey)
-}
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-/* ─── Handlers ─── */
-const openAddForm = () => {
-  newExpDesc.value = ''
-  newExpAmount.value = null
-  newExpCategory.value = 'Food'
-  newExpDate.value = new Date().toISOString().slice(0, 10)
-  newExpAccount.value = null
-  newExpType.value = 'expense'
-  newExpPaymentMethod.value = isApplePayAvailable.value ? 'apple_pay' : 'cash'
-  showAddForm.value = true
-}
-
-const handleAddTransaction = async () => {
-  if (!newExpDesc.value.trim() || !newExpAmount.value || newExpAmount.value <= 0 || !user.value) return
-  await addExpense(user.value.id, {
-    description: newExpDesc.value.trim(),
-    amount: newExpAmount.value,
-    category: newExpCategory.value,
-    date: newExpDate.value,
-    account_id: newExpAccount.value || null,
-    is_shared: listFilter.value === 'shared',
-    payment_method: newExpPaymentMethod.value,
-    type: newExpType.value,
-  })
-  showAddForm.value = false
-}
-
-const handleRemoveExpense = async (id: string) => {
-  if (confirm('Delete this transaction?')) await removeExpense(id)
-}
-
+/* ─── Pareja y cuentas ─── */
 const handleCreateInvite = async () => {
   partnerError.value = ''
   if (!user.value) return
@@ -285,16 +272,12 @@ const handleCreateInvite = async () => {
 const handleJoinPartner = async () => {
   partnerError.value = ''
   if (!partnerInviteCode.value.trim() || !user.value) return
-  try { await joinPartner(partnerInviteCode.value.trim(), user.value.id) }
+  try { await joinPartner(partnerInviteCode.value.trim()) }
   catch (e: any) { partnerError.value = e.message }
 }
 
 const handleRemovePartner = async () => {
-  if (confirm('Unlink your finance partner?')) await removePartner()
-}
-
-const copyPartnerCode = () => {
-  if (partner.value) navigator.clipboard.writeText(partner.value.invite_code)
+  if (confirm('¿Desvincular a tu pareja de finanzas?')) await removePartner()
 }
 
 const handleAddAccount = async () => {
@@ -306,7 +289,7 @@ const handleAddAccount = async () => {
 }
 
 const handleRemoveAccount = async (id: string, name: string) => {
-  if (confirm(`Delete account "${name}"?`)) await removeAccount(id)
+  if (confirm(`¿Borrar la cuenta "${name}"?`)) await removeAccount(id)
 }
 
 const isOwner = (ownerId: string) => ownerId === user.value?.id
@@ -318,71 +301,97 @@ const getAccountName = (accountId: string | null) => {
 
 const getPaymentMethodLabel = (method: string | undefined) => {
   if (!method || method === 'other') return ''
-  const labels: Record<string, string> = { cash: 'Cash', card: 'Card', apple_pay: 'Apple Pay', bank_transfer: 'Transfer' }
+  const labels: Record<string, string> = { cash: 'Efectivo', card: 'Tarjeta', apple_pay: 'Apple Pay', bank_transfer: 'Transferencia' }
   return labels[method] || method
 }
-
-const formatAmount = (n: number) =>
-  Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 </script>
 
 <template>
   <div class="finances-page">
-    <!-- Search bar -->
+    <!-- Búsqueda -->
     <div v-if="showSearch" class="search-bar">
-      <input v-model="searchQuery" type="text" placeholder="Search transactions..." autofocus />
-      <button @click="showSearch = false; searchQuery = ''">Cancel</button>
+      <input v-model="searchQuery" type="text" placeholder="Buscar movimientos..." autofocus />
+      <button @click="showSearch = false; searchQuery = ''">Cancelar</button>
     </div>
 
-    <!-- Header -->
+    <!-- Encabezado -->
     <header class="top-header">
-      <button class="icon-btn" @click="router.push('/home')">
+      <button class="icon-btn" @click="router.push('/home')" aria-label="Inicio">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
       </button>
-      <button class="icon-btn settings-btn" @click="showSettings = true">
+      <button class="icon-btn settings-btn" @click="showSettings = true" aria-label="Ajustes">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
     </header>
 
-    <!-- Total Section -->
+    <!-- Total -->
     <section class="total-section">
-      <span class="total-label">Bank Total</span>
+      <span class="total-label">Saldo en cuentas</span>
       <div class="total-amount-row">
         <span class="balance-dot" :class="{ negative: accountsTotal <= 0, positive: accountsTotal > 0 }"></span>
-        <span class="big-amount">{{ Math.abs(Math.floor(accountsTotal)).toLocaleString() }}</span>
+        <span class="big-amount">{{ Math.abs(Math.floor(accountsTotal)).toLocaleString('es-EC') }}</span>
         <span class="currency-symbol">$</span>
       </div>
       <div class="period-net" :class="{ negative: periodNet < 0, positive: periodNet > 0 }">
-        {{ periodNet >= 0 ? '+' : '' }}${{ formatAmount(periodNet) }} this period
+        {{ periodNet >= 0 ? '+' : '-' }}${{ dinero(periodNet) }} {{ etiquetaPeriodo }}
       </div>
     </section>
 
-    <!-- Expense / Income amounts -->
+    <!-- Por clasificar -->
+    <button v-if="pendingReview.length" class="pendientes" @click="abrirClasificar">
+      <span class="pend-num">{{ pendingReview.length }}</span>
+      <span>
+        <strong>{{ pendingReview.length === 1 ? 'Un gasto' : `${pendingReview.length} gastos` }} por clasificar</strong>
+        <small>Dime en qué gastaste para descontarlo de tu presupuesto</small>
+      </span>
+      <span class="pend-go">›</span>
+    </button>
+
+    <!-- Gastado / ingresado -->
     <div class="amount-toggle">
-      <button class="amount-pill active">${{ formatAmount(periodExpenseTotal) }}</button>
-      <button class="amount-pill">${{ formatAmount(periodIncomeTotal) }}</button>
+      <span class="amount-pill active">−${{ dinero(periodExpenseTotal) }}</span>
+      <span class="amount-pill">+${{ dinero(periodIncomeTotal) }}</span>
     </div>
 
-    <!-- Filters -->
+    <!-- Filtros -->
     <div class="filters-row">
       <div class="filter-dropdown">
         <select v-model="timePeriod">
-          <option value="week">this week</option>
-          <option value="month">this month</option>
-          <option value="year">this year</option>
-          <option value="all">all time</option>
+          <option value="week">esta semana</option>
+          <option value="month">este mes</option>
+          <option value="year">este año</option>
+          <option value="all">todo</option>
         </select>
       </div>
-      <span class="filter-sep">in</span>
+      <span class="filter-sep">en</span>
       <div class="filter-dropdown">
         <select v-model="listFilter">
-          <option value="personal">Private list</option>
-          <option value="shared">Shared list</option>
+          <option value="personal">mi lista</option>
+          <option value="shared">lista compartida</option>
         </select>
       </div>
     </div>
 
-    <!-- Chart -->
+    <!-- Presupuestos -->
+    <section class="budget-card" @click="router.push('/presupuestos')">
+      <div class="budget-card-head">
+        <span>Presupuestos</span>
+        <span class="budget-link">{{ presupuestosTop.length ? 'Ver todos ›' : 'Crear ›' }}</span>
+      </div>
+      <p v-if="!presupuestosTop.length" class="muted budget-empty">
+        Pon cuánto quieres gastar al mes o al año en cada cosa y la app te lo irá descontando.
+      </p>
+      <div v-for="e in presupuestosTop" :key="e.budget.id" class="budget-row" :class="e.nivel">
+        <div class="budget-row-top">
+          <span>{{ e.budget.category === TOTAL ? '💰 Total' : `${iconoDe(e.budget.category)} ${e.budget.category}` }}
+            <small>{{ e.budget.period === 'anual' ? 'año' : 'mes' }}</small></span>
+          <span>{{ e.restante >= 0 ? `quedan $${dinero(e.restante)}` : `pasado $${dinero(-e.restante)}` }}</span>
+        </div>
+        <div class="budget-bar"><div :style="{ width: Math.min(100, e.porcentaje * 100) + '%' }"></div></div>
+      </div>
+    </section>
+
+    <!-- Gráfico -->
     <div class="chart-section">
       <div class="chart-bars">
         <div v-for="(bar, i) in chartBars" :key="i" class="chart-bar-wrap">
@@ -395,114 +404,74 @@ const formatAmount = (n: number) =>
       </div>
     </div>
 
-    <!-- Apple Pay Banner -->
-    <div v-if="showApplePayBanner && isApplePayAvailable" class="apple-pay-banner" @click="showApplePayBanner = false; localStorage.setItem('fin_applePayDismissed', '1')">
-      <div class="apple-pay-content">
-        <svg class="apple-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5C17.88 20.74 17 21.95 15.66 21.97C14.32 21.99 13.89 21.18 12.37 21.18C10.84 21.18 10.37 21.95 9.09 21.99C7.79 22.03 6.8 20.68 5.96 19.47C4.25 16.97 2.94 12.45 4.7 9.39C5.57 7.87 7.13 6.91 8.82 6.89C10.1 6.87 11.32 7.75 12.11 7.75C12.89 7.75 14.37 6.68 15.92 6.84C16.57 6.87 18.39 7.1 19.56 8.82C19.47 8.88 17.39 10.1 17.41 12.63C17.44 15.65 20.06 16.66 20.09 16.67C20.06 16.74 19.67 18.11 18.71 19.5ZM13 3.5C13.73 2.67 14.94 2.04 15.94 2C16.07 3.17 15.6 4.35 14.9 5.19C14.21 6.04 13.07 6.7 11.95 6.61C11.8 5.46 12.36 4.26 13 3.5Z"/></svg>
-        <span>Apple Pay detected on this device</span>
-        <span class="dismiss">&times;</span>
-      </div>
-    </div>
-
-    <!-- Transactions -->
+    <!-- Movimientos -->
     <section class="transactions-section">
       <div v-if="!filteredTransactions.length" class="empty-state">
-        <p>Your transactions will show up here</p>
+        <p>Tus movimientos aparecerán aquí</p>
       </div>
       <div v-else class="transaction-list">
         <template v-for="group in groupedTransactions" :key="group.date">
           <div class="date-header">{{ group.label }}</div>
-          <div v-for="tx in group.transactions" :key="tx.id" class="transaction-item">
+          <div v-for="tx in group.transactions" :key="tx.id" class="transaction-item"
+            :class="{ revisar: tx.needs_review, editable: isOwner(tx.owner_id) }" @click="abrirMovimiento(tx)">
             <div class="tx-left">
               <div class="tx-icon-wrap" :class="tx.type || 'expense'">
-                <svg v-if="tx.payment_method === 'apple_pay'" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5C17.88 20.74 17 21.95 15.66 21.97C14.32 21.99 13.89 21.18 12.37 21.18C10.84 21.18 10.37 21.95 9.09 21.99C7.79 22.03 6.8 20.68 5.96 19.47C4.25 16.97 2.94 12.45 4.7 9.39C5.57 7.87 7.13 6.91 8.82 6.89C10.1 6.87 11.32 7.75 12.11 7.75C12.89 7.75 14.37 6.68 15.92 6.84C16.57 6.87 18.39 7.1 19.56 8.82C19.47 8.88 17.39 10.1 17.41 12.63C17.44 15.65 20.06 16.66 20.09 16.67C20.06 16.74 19.67 18.11 18.71 19.5ZM13 3.5C13.73 2.67 14.94 2.04 15.94 2C16.07 3.17 15.6 4.35 14.9 5.19C14.21 6.04 13.07 6.7 11.95 6.61C11.8 5.46 12.36 4.26 13 3.5Z"/></svg>
-                <svg v-else-if="(tx.type || 'expense') === 'income'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+                <span v-if="(tx.type || 'expense') === 'expense'" class="tx-emoji">{{ iconoDe(tx.category) }}</span>
+                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
               </div>
               <div class="tx-info">
                 <strong>{{ tx.description }}</strong>
                 <div class="tx-meta">
-                  <span class="tx-category">{{ tx.category }}</span>
+                  <span class="tx-category" :class="{ pendiente: tx.needs_review }">{{ tx.needs_review ? 'Toca para clasificar' : tx.category }}</span>
                   <span v-if="tx.payment_method && tx.payment_method !== 'other'" class="tx-method">{{ getPaymentMethodLabel(tx.payment_method) }}</span>
                   <span v-if="getAccountName(tx.account_id)" class="tx-account">{{ getAccountName(tx.account_id) }}</span>
+                  <span v-if="!isOwner(tx.owner_id)" class="tx-account">{{ getDisplayName(tx.owner_id) }}</span>
                 </div>
               </div>
             </div>
             <div class="tx-right">
               <span class="tx-amount" :class="tx.type || 'expense'">
-                {{ (tx.type || 'expense') === 'income' ? '+' : '-' }}${{ Number(tx.amount).toFixed(2) }}
+                {{ (tx.type || 'expense') === 'income' ? '+' : '-' }}${{ dinero(Number(tx.amount)) }}
               </span>
-              <button v-if="isOwner(tx.owner_id)" class="tx-delete" @click="handleRemoveExpense(tx.id)">&times;</button>
             </div>
           </div>
         </template>
       </div>
     </section>
 
-    <!-- Bottom Toolbar -->
+    <!-- Barra inferior -->
     <div class="bottom-toolbar">
       <div class="toolbar-left">
-        <button class="toolbar-add-btn" @click="openAddForm">
+        <button class="toolbar-add-btn" @click="abrirNuevo()" aria-label="Nuevo movimiento">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </button>
-        <button class="toolbar-search-btn" @click="showSearch = !showSearch">
+        <button class="toolbar-search-btn" @click="showSearch = !showSearch" aria-label="Buscar">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         </button>
       </div>
-      <button class="mic-btn" :class="{ listening: isListening }" @click="startVoiceInput">
+      <button class="mic-btn" :class="{ listening: isListening }" @click="startVoiceInput" aria-label="Dictar">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18.5v3.5M8 22h8"/></svg>
       </button>
     </div>
 
-    <!-- Settings Drawer -->
+    <!-- Ajustes -->
     <div v-if="showSettings" class="drawer-overlay" @click.self="showSettings = false">
       <div class="drawer">
         <div class="drawer-header">
-          <h2>Settings</h2>
+          <h2>Ajustes</h2>
           <button class="icon-btn" @click="showSettings = false">&times;</button>
         </div>
 
-        <!-- Partner -->
-        <div class="drawer-section">
-          <h3>Finance Partner</h3>
-          <div v-if="partner && partner.status === 'active'" class="partner-active">
-            <p>Linked with {{ getDisplayName(partner.user_a === user?.id ? partner.user_b : partner.user_a) }}</p>
-            <button class="danger-btn" @click="handleRemovePartner">Unlink Partner</button>
-          </div>
-          <div v-else-if="partner && partner.status === 'pending'">
-            <p class="muted">Waiting for partner. Share this code:</p>
-            <div class="code-row">
-              <code>{{ partner.invite_code }}</code>
-              <button @click="copyPartnerCode">Copy</button>
-            </div>
-          </div>
-          <div v-else>
-            <div class="mini-tabs">
-              <button :class="{ active: partnerMode === 'join' }" @click="partnerMode = 'join'">Join</button>
-              <button :class="{ active: partnerMode === 'create' }" @click="partnerMode = 'create'">Create</button>
-            </div>
-            <div v-if="partnerMode === 'join'">
-              <input v-model="partnerInviteCode" type="text" placeholder="Enter invite code" class="drawer-input" />
-              <button class="primary-btn" @click="handleJoinPartner">Join</button>
-            </div>
-            <div v-else>
-              <p class="muted">Create an invite code to share.</p>
-              <button class="primary-btn" @click="handleCreateInvite">Generate Code</button>
-            </div>
-            <p v-if="partnerError" class="error">{{ partnerError }}</p>
-          </div>
-        </div>
-
-        <!-- Accounts -->
+        <!-- Cuentas -->
         <div class="drawer-section">
           <div class="section-header">
-            <h3>Accounts</h3>
+            <h3>Cuentas</h3>
             <button class="add-small-btn" @click="showAccountForm = !showAccountForm">+</button>
           </div>
           <div v-if="showAccountForm" class="account-form">
-            <input v-model="newAccountName" type="text" placeholder="Account name" class="drawer-input" />
-            <input v-model.number="newAccountBalance" type="number" step="0.01" placeholder="Balance" class="drawer-input" />
-            <button class="primary-btn" @click="handleAddAccount">Add Account</button>
+            <input v-model="newAccountName" type="text" placeholder="Nombre (ej: Pichincha)" class="drawer-input" />
+            <input v-model.number="newAccountBalance" type="number" step="0.01" placeholder="Saldo actual" class="drawer-input" />
+            <button class="primary-btn" @click="handleAddAccount">Agregar cuenta</button>
           </div>
           <div v-for="acc in filteredAccounts" :key="acc.id" class="account-item">
             <div>
@@ -510,112 +479,115 @@ const formatAmount = (n: number) =>
               <small v-if="!isOwner(acc.owner_id)" class="partner-tag">{{ getDisplayName(acc.owner_id) }}</small>
             </div>
             <div class="account-right">
-              <span :class="{ negative: Number(acc.balance) < 0 }">${{ Number(acc.balance).toFixed(2) }}</span>
+              <span :class="{ negative: Number(acc.balance) < 0 }">${{ dinero(Number(acc.balance)) }}</span>
               <button v-if="isOwner(acc.owner_id)" class="remove-btn" @click="handleRemoveAccount(acc.id, acc.name)">&times;</button>
             </div>
           </div>
-          <p v-if="!filteredAccounts.length" class="muted">No accounts yet.</p>
+          <p v-if="!filteredAccounts.length" class="muted">Todavía no hay cuentas.</p>
         </div>
 
-        <!-- Apple Pay Shortcut -->
+        <!-- Atajo -->
         <div class="drawer-section">
-          <h3>Apple Pay Shortcut</h3>
-          <p class="muted">Auto-log Apple Pay transactions using iOS Shortcuts.</p>
+          <h3>Atajo de iPhone (Apple Pay)</h3>
+          <p class="muted">Cada vez que pagas con Apple Pay, el atajo registra el gasto, te pregunta en qué fue y te avisa cuánto te queda del presupuesto.</p>
           <div v-if="apiKey">
-            <p class="muted" style="margin-bottom:4px">Your API Key:</p>
+            <p class="muted" style="margin-bottom:4px">Tu API key (no la compartas):</p>
             <div class="code-row">
               <code class="api-key-code">{{ apiKey.slice(0, 8) }}...{{ apiKey.slice(-4) }}</code>
-              <button @click="copyApiKey">Copy</button>
+              <button @click="copiar(apiKey)">Copiar</button>
             </div>
             <div class="shortcut-instructions">
-              <p class="muted" style="margin-top:12px;margin-bottom:8px"><strong style="color:#e0e0e0">Shortcut setup:</strong></p>
               <ol class="setup-steps">
-                <li>Open <strong>Shortcuts</strong> app on iPhone</li>
-                <li>Go to <strong>Automation</strong> tab</li>
-                <li>Tap <strong>+</strong> &rarr; <strong>Transaction</strong></li>
-                <li>Add action: <strong>Get Contents of URL</strong></li>
-                <li>URL: <code>{{ supabaseUrl }}/rest/v1/rpc/add_expense_via_api_key</code></li>
-                <li>Method: <strong>POST</strong></li>
-                <li>Headers:<br/>
-                  <code>apikey</code>: <code>{{ supabaseAnonKey?.slice(0, 12) }}...</code> <button class="copy-inline" @click="copyAnonKey">copy</button><br/>
-                  <code>Content-Type</code>: <code>application/json</code>
-                </li>
-                <li>Body (JSON):<br/>
-                  <code>{"p_api_key":"{{ apiKey }}", "p_amount": Amount, "p_merchant": Merchant}</code>
-                </li>
+                <li>App <strong>Atajos</strong> → pestaña <strong>Automatización</strong> → <strong>+</strong> → <strong>Transacción</strong>. Elige tus tarjetas y marca <strong>Ejecutar inmediatamente</strong>.</li>
+                <li>Acción <strong>Elegir del menú</strong> con el texto “¿En qué gastaste?” y estas opciones:
+                  <code>Comida, Supermercado, Transporte, Servicios, Arriendo, Entretenimiento, Salud, Compras, Educación, Suscripciones, Otros, Después</code>.
+                  En cada opción pon <strong>Texto</strong> con el mismo nombre (en “Después” déjalo vacío).</li>
+                <li>Acción <strong>Obtener contenido de URL</strong>:
+                  <br/>URL: <code>{{ supabaseUrl }}/rest/v1/rpc/add_expense_via_api_key</code>
+                  <button class="copy-inline" @click="copiar(`${supabaseUrl}/rest/v1/rpc/add_expense_via_api_key`)">copiar</button>
+                  <br/>Método: <strong>POST</strong>
+                  <br/>Encabezados: <code>apikey</code> = <code>{{ supabaseAnonKey?.slice(0, 12) }}...</code>
+                  <button class="copy-inline" @click="copiar(supabaseAnonKey)">copiar</button>
+                  y <code>Content-Type</code> = <code>application/json</code>
+                  <br/>Cuerpo JSON:
+                  <code>p_api_key</code> (texto) = tu API key
+                  <button class="copy-inline" @click="copiar(apiKey)">copiar</button>,
+                  <code>p_amount</code> (número) = <strong>Importe</strong>,
+                  <code>p_merchant</code> (texto) = <strong>Comercio</strong>,
+                  <code>p_category</code> (texto) = <strong>Elemento elegido del menú</strong>,
+                  y si quieres que descuente del saldo <code>p_account_name</code> (texto) = el nombre exacto de tu cuenta.</li>
+                <li>Acción <strong>Obtener valor del diccionario</strong>: clave <code>mensaje</code>.</li>
+                <li>Acción <strong>Mostrar notificación</strong> con ese valor. Te dirá, por ejemplo, “$12,50 en Comida. Te quedan $87,50 de $100 este mes.”</li>
               </ol>
-              <p class="muted" style="margin-top:8px">Use the <strong>Amount</strong> and <strong>Merchant</strong> variables from the Transaction trigger.</p>
+              <p class="muted" style="margin-top:8px">
+                Si eliges “Después”, el gasto queda <strong>por clasificar</strong> y la app te lo pregunta al abrirla.
+                Para abrirla directo ahí, agrega al final <strong>Abrir URL</strong>:
+                <code>{{ appUrl }}</code> <button class="copy-inline" @click="copiar(appUrl)">copiar</button>
+              </p>
             </div>
           </div>
           <div v-else>
-            <button class="primary-btn" @click="handleGenerateApiKey">Generate API Key</button>
+            <button class="primary-btn" @click="handleGenerateApiKey">Generar API key</button>
+          </div>
+        </div>
+
+        <!-- Pareja -->
+        <div class="drawer-section">
+          <h3>Finanzas en pareja</h3>
+          <div v-if="partner && partner.status === 'active'" class="partner-active">
+            <p>Vinculado con {{ getDisplayName((partner.user_a === user?.id ? partner.user_b : partner.user_a) ?? '') }}</p>
+            <button class="danger-btn" @click="handleRemovePartner">Desvincular</button>
+          </div>
+          <div v-else-if="partner && partner.status === 'pending'">
+            <p class="muted">Esperando a tu pareja. Comparte este código:</p>
+            <div class="code-row">
+              <code>{{ partner.invite_code }}</code>
+              <button @click="copiar(partner.invite_code)">Copiar</button>
+            </div>
+          </div>
+          <div v-else>
+            <div class="mini-tabs">
+              <button :class="{ active: partnerMode === 'join' }" @click="partnerMode = 'join'">Unirme</button>
+              <button :class="{ active: partnerMode === 'create' }" @click="partnerMode = 'create'">Invitar</button>
+            </div>
+            <div v-if="partnerMode === 'join'">
+              <input v-model="partnerInviteCode" type="text" placeholder="Código de invitación" class="drawer-input" />
+              <button class="primary-btn" @click="handleJoinPartner">Unirme</button>
+            </div>
+            <div v-else>
+              <p class="muted">Crea un código para compartir.</p>
+              <button class="primary-btn" @click="handleCreateInvite">Generar código</button>
+            </div>
+            <p v-if="partnerError" class="error">{{ partnerError }}</p>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Add Transaction Modal -->
-    <div v-if="showAddForm" class="modal-overlay" @click.self="showAddForm = false">
-      <form class="modal-sheet" @submit.prevent="handleAddTransaction">
-        <div class="sheet-handle"></div>
-        <h2>New Transaction</h2>
-
-        <div class="type-toggle">
-          <button type="button" :class="{ active: newExpType === 'expense' }" @click="newExpType = 'expense'">Expense</button>
-          <button type="button" :class="{ active: newExpType === 'income' }" @click="newExpType = 'income'">Income</button>
-        </div>
-
-        <label>
-          Description
-          <input v-model="newExpDesc" type="text" placeholder="What was it for?" required />
-        </label>
-
-        <div class="form-row">
-          <label>
-            Amount ($)
-            <input v-model.number="newExpAmount" type="number" step="0.01" min="0.01" placeholder="0.00" required />
-          </label>
-          <label>
-            Date
-            <input v-model="newExpDate" type="date" required />
-          </label>
-        </div>
-
-        <label>
-          Category
-          <select v-model="newExpCategory">
-            <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
-          </select>
-        </label>
-
-        <label>
-          Payment Method
-          <select v-model="newExpPaymentMethod">
-            <option v-for="m in paymentMethods" :key="m.value" :value="m.value">{{ m.label }}</option>
-          </select>
-        </label>
-
-        <label>
-          From Account
-          <select v-model="newExpAccount">
-            <option :value="null">None (cash)</option>
-            <option v-for="acc in filteredAccounts.filter(a => isOwner(a.owner_id))" :key="acc.id" :value="acc.id">{{ acc.name }}</option>
-          </select>
-        </label>
-
-        <div class="form-actions">
-          <button type="button" @click="showAddForm = false">Cancel</button>
-          <button type="submit" class="primary">Add</button>
-        </div>
-      </form>
-    </div>
+    <!-- Hoja de movimiento -->
+    <MovimientoSheet
+      v-if="hoja && user"
+      :modo="hoja.modo"
+      :movimiento="hoja.movimiento"
+      :prellenado="hoja.prellenado"
+      :pendientes-restantes="colaClasificar.length"
+      :cuentas="accounts"
+      :presupuestos="budgets"
+      :gastos="expenses"
+      :user-id="user.id"
+      :compartido="listFilter === 'shared'"
+      @guardar="onGuardar"
+      @saltar="onSaltar"
+      @borrar="onBorrar"
+      @cerrar="hoja = null"
+    />
   </div>
 </template>
 
 <style scoped>
 .finances-page {
   padding: 20px 16px;
-  padding-bottom: 100px;
+  padding-bottom: calc(100px + env(safe-area-inset-bottom));
   min-height: 100vh;
 }
 
@@ -897,6 +869,7 @@ const formatAmount = (n: number) =>
   padding: 16px 20px;
   background: linear-gradient(180deg, transparent 0%, #0f0f1a 30%);
   padding-top: 32px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 .toolbar-left {
   display: flex;
@@ -992,7 +965,7 @@ const formatAmount = (n: number) =>
   max-width: 380px;
   background: #12121f;
   height: 100%;
-  padding: 24px;
+  padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
   overflow-y: auto;
   animation: slideIn 0.25s ease;
 }
@@ -1280,4 +1253,39 @@ const formatAmount = (n: number) =>
   color: white;
   border: none;
 }
+
+/* ── Por clasificar ── */
+.pendientes {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer;
+  background: rgba(255, 179, 71, 0.12); border: 1px solid rgba(255, 179, 71, 0.4);
+  border-radius: 16px; padding: 12px 14px; margin-bottom: 16px; color: #f0f0f0;
+}
+.pendientes strong { display: block; font-size: 0.95rem; }
+.pendientes small { color: #c0a070; font-size: 0.8rem; }
+.pend-num {
+  min-width: 32px; height: 32px; border-radius: 50%; background: #ffb347; color: #1a1a2e;
+  display: flex; align-items: center; justify-content: center; font-weight: 800;
+}
+.pend-go { margin-left: auto; color: #ffb347; font-size: 1.4rem; }
+
+/* ── Tarjeta de presupuestos ── */
+.budget-card { background: #16213e; border-radius: 16px; padding: 14px; margin-bottom: 18px; cursor: pointer; }
+.budget-card-head { display: flex; justify-content: space-between; color: #e0e0e0; font-weight: 600; margin-bottom: 8px; }
+.budget-link { color: #6c63ff; font-weight: 500; font-size: 0.85rem; }
+.budget-empty { margin: 0; }
+.budget-row { margin-top: 10px; }
+.budget-row-top { display: flex; justify-content: space-between; font-size: 0.85rem; color: #c0c0d0; }
+.budget-row-top small { color: #6a6a8a; margin-left: 4px; }
+.budget-row.pasado .budget-row-top span:last-child { color: #ff6b6b; }
+.budget-bar { height: 6px; background: #2a2a4a; border-radius: 3px; margin-top: 6px; overflow: hidden; }
+.budget-bar div { height: 100%; background: #4ecdc4; border-radius: 3px; }
+.budget-row.alerta .budget-bar div { background: #ffb347; }
+.budget-row.pasado .budget-bar div { background: #ff6b6b; }
+
+/* ── Movimientos ── */
+.transaction-item.editable { cursor: pointer; }
+.transaction-item.revisar { border: 1px dashed rgba(255, 179, 71, 0.5); }
+.tx-category.pendiente { color: #ffb347; }
+.tx-emoji { font-size: 1rem; line-height: 1; }
+span.amount-pill { display: inline-block; }
 </style>
