@@ -72,6 +72,12 @@ const copiar = async (texto: string | null | undefined, que: string) => {
   try { await navigator.clipboard.writeText(texto); copiado.value = que; setTimeout(() => { copiado.value = '' }, 1500) } catch { /* sin permiso */ }
 }
 const generarClave = async () => { if (user.value) await generateApiKey(user.value.id) }
+const claveCambiada = ref(false)
+const cambiarClave = async () => {
+  if (!confirm('¿Cambiar tu clave? La actual deja de funcionar al instante: tendrás que pegar la nueva en el atajo.')) return
+  await generateApiKey()
+  claveCambiada.value = true
+}
 
 const salir = async () => {
   await signOut()
@@ -158,6 +164,11 @@ const salir = async () => {
         <div class="clave">
           <span class="muted" style="color: var(--tinta)">Tu API key (no la compartas)</span>
           <button class="btn" @click="copiar(apiKey, 'clave')"><code>{{ apiKey.slice(0, 8) }}…{{ apiKey.slice(-4) }}</code> {{ copiado === 'clave' ? 'Copiada' : 'Copiar' }}</button>
+          <button class="btn peligro" style="background: #fff" @click="cambiarClave">Cambiar mi clave</button>
+          <p v-if="claveCambiada" class="bloque amarillo" style="margin: 0; font-size: 14px">
+            Clave nueva lista. Cópiala y pégala en el atajo: en <b>Atajos</b>, mantén presionado <b>Registrar gasto</b> → <b>Editar</b> → reemplaza el texto del primer bloque.
+          </p>
+          <span class="muted" style="color: var(--tinta); font-weight: 500">Si pierdes el teléfono o crees que alguien la vio, cámbiala: la anterior deja de servir.</span>
         </div>
         <ol class="pasos grandes">
           <li>

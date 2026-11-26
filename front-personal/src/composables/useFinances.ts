@@ -274,15 +274,12 @@ export function useFinances() {
     apiKey.value = data?.api_key ?? null
   }
 
-  const generateApiKey = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('user_api_keys')
-      .upsert({ user_id: userId }, { onConflict: 'user_id' })
-      .select('api_key')
-      .single()
-    if (error) throw error
-    apiKey.value = data.api_key
-    return data.api_key
+  /** Crea tu clave del atajo o la reemplaza por una nueva (la anterior deja de funcionar) */
+  const generateApiKey = async (_userId?: string) => {
+    const { data, error } = await supabase.rpc('cambiar_mi_clave')
+    if (error) throw new Error(error.message)
+    apiKey.value = data as string
+    return data as string
   }
 
   return {
