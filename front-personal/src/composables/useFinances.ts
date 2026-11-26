@@ -30,7 +30,10 @@ export interface Budget {
   is_shared: boolean
   category: string
   period: 'mensual' | 'anual'
+  /** total (en compartidos = suma de los aportes) */
   amount: number
+  /** solo compartidos: { user_id: aporte } */
+  aportes: Record<string, number>
 }
 
 export type NewExpense = {
@@ -197,18 +200,29 @@ export function useFinances() {
   // --- Presupuestos ---
   const loadBudgets = async () => {
     const { data } = await supabase.from('budgets').select('*').order('category')
-    budgets.value = (data ?? []).map(b => ({ ...b, amount: Number(b.amount) }))
+    budgets.value = (data ?? []).map(b => ({ ...b, amount: Number(b.amount), aportes: b.aportes ?? {} }))
   }
 
-  /** Crea o reemplaza el presupuesto de esa categoría y periodo */
-  const saveBudget = async (userId: string, b: Omit<Budget, 'id' | 'owner_id'>) => {
-    const { data, error } = await supabase
-      .from('budgets')
-      .upsert({ ...b, owner_id: userId }, { onConflict: 'owner_id,is_shared,category,period' })
-      .select()
-      .single()
-    if (error) throw error
-    const saved = { ...data, amount: Number(data.amount) }
+  /**
+   * Guarda un presupuesto.
+   * - Con id: lo actualiza (en un compartido, cualquiera de los dos puede).
+   * - Compartido sin id: si la pareja ya tiene uno de esa categoría y periodo, se actualiza ese.
+   * - Si no, crea o reemplaza el tuyo de esa categoría y periodo.
+   */
+  const saveBudget = async (userId: string, b: Omit<Budget, 'id' | 'owner_id'>, id?: string | null) => {
+    const existente = id
+      ? budgets.value.find(x => x.id === id)
+      : b.is_shared
+        ? budgets.value.find(x => x.is_shared && x.category === b.category && x.period === b.period)
+        : undefined
+
+    const query = existente
+      ? supabase.from('budgets').update(b).eq('id', existente.id)
+      : supabase.from('budgets').upsert({ ...b, owner_id: userId }, { onConflict: 'owner_id,is_shared,category,period' })
+
+    const { data, error } = await query.select().single()
+    if (error) throw new Error(error.message)
+    const saved: Budget = { ...data, amount: Number(data.amount), aportes: data.aportes ?? {} }
     budgets.value = [...budgets.value.filter(x => x.id !== saved.id), saved]
       .sort((a, b) => a.category.localeCompare(b.category))
     return saved

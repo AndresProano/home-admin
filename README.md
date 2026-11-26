@@ -6,7 +6,7 @@ Web app to organize a shared home: a kitchen inventory shared by the members of 
 - Sign-in with Google through Supabase Auth.
 - Households with invite codes; members share a kitchen item list.
 - Finances: bank accounts and expenses (category, payment method), personal vs. shared balances, partner linking with an invite code.
-- Budgets (Presupuestos): monthly or annual, per category or for total spending, with pace marker and "per day / per month left".
+- Budgets (Presupuestos): monthly or annual, per category or for total spending, with pace marker and "per day / per month left". Shared budgets with a partner: each one sets their share (e.g. $100 + $100 = $200) and sees how much each has spent.
 - iPhone Shortcut on every Apple Pay payment: asks the category, logs the expense and notifies how much budget is left; skipped ones land in a "to classify" inbox the app asks about.
 - Account balances are kept by a database trigger, so the app and the Shortcut never overwrite each other.
 - Access control in PostgreSQL with Row Level Security: 6 tables, 23 policies and helper SQL functions (household membership, partner visibility).
@@ -23,4 +23,4 @@ npm install
 # .env with VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY and VITE_GOOGLE_CLIENT_ID
 npm run dev
 ```
-Database: run `front-personal/supabase-schema.sql` in the Supabase SQL editor, then the `migration-*.sql` files (`migration-presupuestos.sql` last).
+Database: run `front-personal/supabase-schema.sql` in the Supabase SQL editor, then the `migration-*.sql` files (`migration-presupuestos.sql` and then `migration-presupuesto-compartido.sql` last).

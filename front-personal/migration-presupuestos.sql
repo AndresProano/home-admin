@@ -186,7 +186,7 @@ declare
   v_mensaje text;
   v_presupuesto json := null;
   v_categorias text[] := array['Comida','Supermercado','Transporte','Servicios','Arriendo',
-    'Entretenimiento','Salud','Compras','Educación','Suscripciones','Otros'];
+    'Entretenimiento','Salidas','Salud','Compras','Educación','Suscripciones','Otros'];
 begin
   select user_id into v_user_id from user_api_keys where api_key = p_api_key;
   if v_user_id is null then

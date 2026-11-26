@@ -20,6 +20,7 @@ const props = defineProps<{
   gastos: Expense[]
   userId: string
   compartido: boolean
+  tienePareja?: boolean
   prellenado?: Partial<NewExpense>
 }>()
 
@@ -38,6 +39,7 @@ const fecha = ref(hoy())
 const cuenta = ref<string | null>(null)
 const metodo = ref('card')
 const otraFecha = ref(false)
+const esCompartido = ref(false)
 const error = ref('')
 
 const cargar = () => {
@@ -51,6 +53,7 @@ const cargar = () => {
   cuenta.value = m?.account_id ?? p.account_id ?? null
   metodo.value = m?.payment_method ?? p.payment_method ?? 'card'
   otraFecha.value = fecha.value !== hoy() && fecha.value !== ayer()
+  esCompartido.value = m?.is_shared ?? p.is_shared ?? props.compartido
   error.value = ''
 }
 watch(() => props.movimiento?.id, cargar, { immediate: true })
@@ -61,9 +64,8 @@ const titulo = computed(() => ({
   nuevo: 'Nuevo movimiento',
 }[props.modo]))
 
-const esCompartido = computed(() => props.movimiento?.is_shared ?? props.compartido)
-const misCuentas = computed(() =>
-  props.cuentas.filter(c => c.owner_id === props.userId && c.is_shared === esCompartido.value))
+// cualquier cuenta tuya (personal o compartida) puede pagar un gasto compartido
+const misCuentas = computed(() => props.cuentas.filter(c => c.owner_id === props.userId))
 
 /** Cómo queda el presupuesto de la categoría elegida si guardas */
 const impacto = computed(() => {
@@ -180,15 +182,21 @@ const elegirFecha = (f: 'hoy' | 'ayer' | 'otra') => {
         </label>
       </div>
 
+      <label v-if="tienePareja" class="switch">
+        <input v-model="esCompartido" type="checkbox" />
+        <span class="switch-ui"></span>
+        <span>Compartido con mi pareja <small>(cuenta en el presupuesto de los dos)</small></span>
+      </label>
+
       <!-- Impacto en el presupuesto -->
       <div v-if="impacto && !impacto.sinPresupuesto" class="impacto" :class="impacto.est.nivel">
         <div class="impacto-barra"><div :style="{ width: Math.min(100, impacto.est.porcentaje * 100) + '%' }"></div></div>
         <span v-if="impacto.est.restante >= 0">
-          {{ categoria }}: te quedarían <strong>${{ dinero(impacto.est.restante) }}</strong>
+          {{ categoria }}{{ esCompartido ? ' (compartido)' : '' }}: {{ esCompartido ? 'les' : 'te' }} quedarían <strong>${{ dinero(impacto.est.restante) }}</strong>
           de ${{ dinero(impacto.est.budget.amount) }} {{ impacto.est.budget.period === 'anual' ? 'este año' : 'este mes' }}
         </span>
         <span v-else>
-          {{ categoria }}: te pasarías <strong>${{ dinero(-impacto.est.restante) }}</strong>
+          {{ categoria }}{{ esCompartido ? ' (compartido)' : '' }}: {{ esCompartido ? 'se pasarían' : 'te pasarías' }} <strong>${{ dinero(-impacto.est.restante) }}</strong>
           del presupuesto {{ impacto.est.budget.period === 'anual' ? 'anual' : 'del mes' }}
         </span>
       </div>
@@ -252,6 +260,13 @@ input, select {
 }
 input:focus, select:focus { outline: none; border-color: #6c63ff; }
 .fecha-input { margin: -6px 0 14px; }
+.switch { display: flex; align-items: center; gap: 10px; color: #e0e0e0; font-size: 0.9rem; cursor: pointer; margin-bottom: 14px; }
+.switch small { color: #6a6a8a; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+.switch-ui { flex: 0 0 auto; width: 42px; height: 24px; border-radius: 12px; background: #2a2a4a; position: relative; transition: background 0.2s; }
+.switch-ui::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #e0e0e0; transition: transform 0.2s; }
+.switch input:checked + .switch-ui { background: #6c63ff; }
+.switch input:checked + .switch-ui::after { transform: translateX(18px); }
 .form-row { display: flex; gap: 12px; }
 .form-row label { flex: 1; min-width: 0; }
 .impacto {

@@ -500,7 +500,7 @@ const getPaymentMethodLabel = (method: string | undefined) => {
               <ol class="setup-steps">
                 <li>App <strong>Atajos</strong> → pestaña <strong>Automatización</strong> → <strong>+</strong> → <strong>Transacción</strong>. Elige tus tarjetas y marca <strong>Ejecutar inmediatamente</strong>.</li>
                 <li>Acción <strong>Elegir del menú</strong> con el texto “¿En qué gastaste?” y estas opciones:
-                  <code>Comida, Supermercado, Transporte, Servicios, Arriendo, Entretenimiento, Salud, Compras, Educación, Suscripciones, Otros, Después</code>.
+                  <code>Comida, Supermercado, Transporte, Servicios, Arriendo, Entretenimiento, Salidas, Salud, Compras, Educación, Suscripciones, Otros, Después</code>.
                   En cada opción pon <strong>Texto</strong> con el mismo nombre (en “Después” déjalo vacío).</li>
                 <li>Acción <strong>Obtener contenido de URL</strong>:
                   <br/>URL: <code>{{ supabaseUrl }}/rest/v1/rpc/add_expense_via_api_key</code>
@@ -515,7 +515,9 @@ const getPaymentMethodLabel = (method: string | undefined) => {
                   <code>p_amount</code> (número) = <strong>Importe</strong>,
                   <code>p_merchant</code> (texto) = <strong>Comercio</strong>,
                   <code>p_category</code> (texto) = <strong>Elemento elegido del menú</strong>,
-                  y si quieres que descuente del saldo <code>p_account_name</code> (texto) = el nombre exacto de tu cuenta.</li>
+                  y si quieres que descuente del saldo <code>p_account_name</code> (texto) = el nombre exacto de tu cuenta.
+                  <br/>Opcional: <code>p_compartido</code> (booleano) = Sí para que cuente en el presupuesto compartido con tu pareja
+                  (o márcalo después al clasificar).</li>
                 <li>Acción <strong>Obtener valor del diccionario</strong>: clave <code>mensaje</code>.</li>
                 <li>Acción <strong>Mostrar notificación</strong> con ese valor. Te dirá, por ejemplo, “$12,50 en Comida. Te quedan $87,50 de $100 este mes.”</li>
               </ol>
@@ -576,6 +578,7 @@ const getPaymentMethodLabel = (method: string | undefined) => {
       :gastos="expenses"
       :user-id="user.id"
       :compartido="listFilter === 'shared'"
+      :tiene-pareja="partner?.status === 'active'"
       @guardar="onGuardar"
       @saltar="onSaltar"
       @borrar="onBorrar"
