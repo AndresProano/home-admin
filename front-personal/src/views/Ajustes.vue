@@ -62,7 +62,8 @@ const desvincular = async () => {
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 const urlAtajo = `${supabaseUrl}/rest/v1/rpc/registrar_gasto_atajo`
-const urlInstalar = `${import.meta.env.BASE_URL}atajo/Registrar%20gasto.shortcut`
+// Enlace de iCloud: iOS solo importa atajos de forma confiable desde aquí (al instalar pide la clave de cada uno)
+const urlInstalar = 'https://www.icloud.com/shortcuts/68e699e8f81a488d936d5ac95468061c'
 const urlApp = `${window.location.origin}${import.meta.env.BASE_URL}finances?clasificar=1`
 const menu = [...CATEGORIAS.map(c => c.nombre), 'Después'].join(', ')
 const copiado = ref('')
@@ -165,7 +166,7 @@ const salir = async () => {
           </li>
           <li>
             <strong>Instala el atajo</strong> desde el iPhone. Cuando lo pida, pega tu clave. Cada vez que pagues te mostrará el monto y te preguntará <b>de qué cuenta salió</b> (tu lista de arriba) y <b>en qué gastaste</b>.
-            <a class="btn primario" style="margin-top: 6px" :href="urlInstalar">Instalar “Registrar gasto”</a>
+            <a class="btn primario" style="margin-top: 6px" :href="urlInstalar" target="_blank" rel="noopener">Instalar “Registrar gasto”</a>
           </li>
           <li>
             <strong>Crea la automatización</strong> (Apple no deja compartirla, son 3 toques):
