@@ -23,8 +23,9 @@ const descripcion = ref('')
 const monto = ref<number | null>(null)
 const categoria = ref('')
 const fecha = ref(hoy())
-const cuenta = ref<string | null>(null)
-const metodo = ref('card')
+/** undefined = aún no eligió · null = efectivo / ninguna · id = cuenta */
+const cuenta = ref<string | null | undefined>(undefined)
+const metodoOriginal = ref<string | undefined>(undefined)
 const otraFecha = ref(false)
 const esCompartido = ref(false)
 const error = ref('')
@@ -42,8 +43,9 @@ const cargar = () => {
   monto.value = m ? Number(m.amount) : (p.amount ?? null)
   categoria.value = m && m.category !== SIN_CLASIFICAR ? m.category : (p.category ?? '')
   fecha.value = m?.date ?? p.date ?? hoy()
-  cuenta.value = m?.account_id ?? p.account_id ?? null
-  metodo.value = m?.payment_method ?? p.payment_method ?? 'card'
+  // en un gasto nuevo o por clasificar sin cuenta, hay que elegirla; al editar, sin cuenta = efectivo
+  cuenta.value = m?.account_id ?? p.account_id ?? (modo.value === 'editar' ? null : undefined)
+  metodoOriginal.value = m?.payment_method
   otraFecha.value = fecha.value !== hoy() && fecha.value !== ayer()
   esCompartido.value = m?.is_shared ?? p.is_shared ?? compartido.value
   error.value = ''
@@ -51,7 +53,10 @@ const cargar = () => {
 watch(() => [hoja.value, mov.value?.id], cargar, { immediate: true })
 
 const titulo = computed(() => ({ clasificar: '¿En qué gastaste?', editar: 'Editar', nuevo: 'Nuevo' }[modo.value]))
-const misCuentas = computed(() => accounts.value.filter(c => c.owner_id === user.value?.id))
+const misCuentas = computed(() => accounts.value
+  .filter(c => c.owner_id === user.value?.id)
+  .sort((a, b) => Number(a.tipo === 'credito') - Number(b.tipo === 'credito') || a.name.localeCompare(b.name)))
+const cuentaElegida = computed(() => accounts.value.find(c => c.id === cuenta.value))
 
 /** Cómo queda el presupuesto de la categoría elegida si guardas */
 const impacto = computed(() => {
@@ -80,15 +85,19 @@ const guardar = async () => {
   if (!user.value || !hoja.value) return
   if (!monto.value || monto.value <= 0) { error.value = 'Pon un monto mayor a 0'; return }
   if (tipo.value === 'expense' && !categoria.value) { error.value = 'Elige en qué gastaste'; return }
+  if (cuenta.value === undefined) { error.value = tipo.value === 'income' ? 'Elige a qué cuenta entró' : 'Elige de qué cuenta salió'; return }
+  const metodo = metodoOriginal.value === 'apple_pay' ? 'apple_pay'
+    : !cuentaElegida.value ? 'cash'
+      : cuentaElegida.value.tipo === 'credito' ? 'credit' : 'debit'
   const datos = {
     type: tipo.value,
     description: descripcion.value.trim() || mov.value?.description || categoria.value || (tipo.value === 'income' ? 'Ingreso' : 'Gasto'),
     amount: monto.value,
     category: tipo.value === 'income' ? (categoria.value || 'Otros') : categoria.value,
     date: fecha.value,
-    account_id: cuenta.value,
+    account_id: cuenta.value ?? null,
     is_shared: esCompartido.value,
-    payment_method: metodo.value,
+    payment_method: metodo,
   }
   guardando.value = true
   try {
@@ -172,24 +181,21 @@ const borrar = async () => {
         </label>
       </div>
 
-      <div class="fila">
-        <label class="campo">
-          Cuenta
-          <select v-model="cuenta">
-            <option :value="null">Efectivo / ninguna</option>
-            <option v-for="c in misCuentas" :key="c.id" :value="c.id">{{ c.name }}</option>
-          </select>
-        </label>
-        <label class="campo">
-          Pago
-          <select v-model="metodo">
-            <option value="card">Tarjeta</option>
-            <option value="apple_pay">Apple Pay</option>
-            <option value="cash">Efectivo</option>
-            <option value="bank_transfer">Transferencia</option>
-            <option value="other">Otro</option>
-          </select>
-        </label>
+      <div>
+        <p class="subtitulo" style="margin-bottom: 10px">{{ tipo === 'income' ? '¿A qué cuenta entró?' : '¿De qué cuenta salió?' }}</p>
+        <div class="cuentas">
+          <button v-for="c in misCuentas" :key="c.id" type="button" class="cuenta-op" :class="{ on: cuenta === c.id }" @click="cuenta = c.id">
+            <span class="tipo" :class="c.tipo">{{ c.tipo === 'credito' ? 'Crédito' : 'Débito' }}</span>
+            <strong>{{ c.name }}</strong>
+            <span class="saldo">{{ c.tipo === 'credito' ? `debes $${dinero(Math.max(0, -Number(c.balance)))}` : `$${dinero(Number(c.balance))}` }}</span>
+          </button>
+          <button type="button" class="cuenta-op" :class="{ on: cuenta === null }" @click="cuenta = null">
+            <span class="tipo">Efectivo</span>
+            <strong>Efectivo / ninguna</strong>
+            <span class="saldo">no descuenta saldo</span>
+          </button>
+        </div>
+        <p v-if="!misCuentas.length" class="muted" style="margin: 8px 0 0">Agrega tus cuentas en Ajustes para elegir de cuál salió.</p>
       </div>
 
       <label v-if="tienePareja" class="interruptor">
@@ -235,5 +241,14 @@ const borrar = async () => {
 .interruptor input:checked + .pista { background: var(--azul); }
 .interruptor input:checked + .pista::after { transform: translateX(22px); background: #fff; }
 .interruptor input:focus-visible + .pista { outline: 3px solid var(--azul); outline-offset: 2px; }
+.cuentas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cuenta-op { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 76px; padding: 10px 12px; border: var(--borde); border-radius: 14px; background: var(--fondo); text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.cuenta-op strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; max-width: 100%; white-space: nowrap; }
+.cuenta-op .saldo { font-size: 12px; color: var(--gris); }
+.cuenta-op.on { background: var(--tinta); color: #fff; }
+.cuenta-op.on .saldo { color: #ddd; }
+.tipo { font-size: 10px; font-weight: 800; text-transform: uppercase; border: 1.5px solid currentColor; border-radius: 6px; padding: 1px 5px; background: var(--neutro); color: var(--tinta); }
+.tipo.debito { background: var(--menta); }
+.tipo.credito { background: var(--durazno); }
 .impacto { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
 </style>

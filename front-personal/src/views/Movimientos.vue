@@ -46,8 +46,11 @@ const grupos = computed(() => {
   return out
 })
 
-const nombreCuenta = (id: string | null) => id ? accounts.value.find(a => a.id === id)?.name ?? '' : ''
-const METODOS: Record<string, string> = { cash: 'Efectivo', card: 'Tarjeta', apple_pay: 'Apple Pay', bank_transfer: 'Transferencia' }
+const nombreCuenta = (id: string | null) => {
+  const a = id ? accounts.value.find(x => x.id === id) : undefined
+  return a ? `${a.name} (${a.tipo === 'credito' ? 'crédito' : 'débito'})` : ''
+}
+const METODOS: Record<string, string> = { cash: 'Efectivo', apple_pay: 'Apple Pay', bank_transfer: 'Transferencia' }
 const detalle = (e: Expense) => [
   e.needs_review ? 'Toca para clasificar' : e.category,
   METODOS[e.payment_method ?? ''] ?? '',

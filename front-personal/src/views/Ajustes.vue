@@ -10,7 +10,7 @@ import { CATEGORIAS } from '@/lib/categorias'
 
 const router = useRouter()
 const { user, signOut } = useAuth()
-const { accounts, partner, apiKey, addAccount, updateAccount, removeAccount, createPartnerInvite, joinPartner, removePartner,
+const { accounts, partner, apiKey, addAccount, removeAccount, createPartnerInvite, joinPartner, removePartner,
   generateApiKey, getDisplayName } = useFinances()
 const { cargar, olvidarCarga, parejaId, tienePareja, nombreDe, esMio } = useApp()
 
@@ -23,23 +23,19 @@ const formCuenta = ref(false)
 const cuentaNombre = ref('')
 const cuentaSaldo = ref<number | null>(null)
 const cuentaCompartida = ref(false)
-const cuentaTarjeta = ref('')
-/* Editar la tarjeta de una cuenta existente */
-const editandoTarjeta = ref<string | null>(null)
-const tarjetaTexto = ref('')
-const editarTarjeta = (id: string, actual: string | null | undefined) => { editandoTarjeta.value = id; tarjetaTexto.value = actual ?? '' }
-const guardarTarjeta = async () => {
-  if (!editandoTarjeta.value) return
-  await updateAccount(editandoTarjeta.value, { tarjeta: tarjetaTexto.value.trim() || null })
-  editandoTarjeta.value = null
-}
+const cuentaTipo = ref<'debito' | 'credito'>('debito')
 const misCuentas = computed(() => accounts.value.filter(a => !a.is_shared))
 const compartidas = computed(() => accounts.value.filter(a => a.is_shared))
 const agregarCuenta = async () => {
   if (!cuentaNombre.value.trim() || !user.value) return
-  await addAccount(user.value.id, cuentaNombre.value.trim(), Number(cuentaSaldo.value || 0), cuentaCompartida.value, cuentaTarjeta.value)
-  cuentaNombre.value = ''; cuentaSaldo.value = null; cuentaCompartida.value = false; cuentaTarjeta.value = ''; formCuenta.value = false
+  // crédito: lo que debes se guarda como saldo negativo
+  const monto = Number(cuentaSaldo.value || 0)
+  const saldo = cuentaTipo.value === 'credito' ? -Math.abs(monto) : monto
+  await addAccount(user.value.id, cuentaNombre.value.trim(), saldo, cuentaCompartida.value, cuentaTipo.value)
+  cuentaNombre.value = ''; cuentaSaldo.value = null; cuentaCompartida.value = false; cuentaTipo.value = 'debito'; formCuenta.value = false
 }
+const totalDebito = computed(() => accounts.value.filter(a => a.tipo !== 'credito').reduce((s, a) => s + Number(a.balance), 0))
+const totalDeuda = computed(() => -accounts.value.filter(a => a.tipo === 'credito').reduce((s, a) => s + Number(a.balance), 0))
 const borrarCuenta = async (id: string, nombre: string) => {
   if (confirm(`¿Borrar la cuenta "${nombre}"? Los movimientos se quedan, solo pierden la cuenta.`)) await removeAccount(id)
 }
@@ -96,32 +92,30 @@ const salir = async () => {
         <button class="btn-icono amarillo" aria-label="Agregar cuenta" @click="formCuenta = !formCuenta"><Icono nombre="mas" :grosor="2.6" /></button>
       </div>
       <form v-if="formCuenta" class="form" @submit.prevent="agregarCuenta">
-        <label class="campo">Nombre<input v-model="cuentaNombre" type="text" placeholder="Ej: Pichincha" required /></label>
-        <label class="campo">Saldo de hoy ($)<input v-model.number="cuentaSaldo" type="number" step="0.01" inputmode="decimal" placeholder="0,00" /></label>
-        <label class="campo">Nombre de su tarjeta en Wallet (opcional)
-          <input v-model="cuentaTarjeta" type="text" placeholder="Ej: Visa Pichincha" />
-          <span class="muted" style="font-weight: 500">Así el atajo sabe de qué cuenta descontar. Si la tarjeta ya incluye el nombre de la cuenta, no hace falta.</span>
+        <div class="seg">
+          <button type="button" :class="{ on: cuentaTipo === 'debito' }" @click="cuentaTipo = 'debito'">Débito / banco</button>
+          <button type="button" :class="{ on: cuentaTipo === 'credito' }" @click="cuentaTipo = 'credito'">Tarjeta de crédito</button>
+        </div>
+        <label class="campo">Nombre<input v-model="cuentaNombre" type="text" :placeholder="cuentaTipo === 'credito' ? 'Ej: Visa Produbanco' : 'Ej: Pichincha, Efectivo'" required /></label>
+        <label class="campo">{{ cuentaTipo === 'credito' ? '¿Cuánto debes hoy en esta tarjeta? ($)' : 'Saldo de hoy ($)' }}
+          <input v-model.number="cuentaSaldo" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00" />
+          <span class="muted" style="font-weight: 500">{{ cuentaTipo === 'credito' ? 'Cada gasto con esta tarjeta suma a lo que debes.' : 'Cada gasto de esta cuenta baja el saldo.' }}</span>
         </label>
         <label v-if="tienePareja" class="check"><input v-model="cuentaCompartida" type="checkbox" /> Es una cuenta compartida con mi pareja</label>
         <button class="btn primario" type="submit">Agregar cuenta</button>
       </form>
-      <div v-for="a in [...misCuentas, ...compartidas]" :key="a.id" class="cuenta">
-        <div class="fila-item">
-          <span class="mov-info"><strong>{{ a.name }}</strong><span>{{ a.is_shared ? `Compartida${esMio(a.owner_id) ? '' : ' · ' + nombreDe(a.owner_id)}` : 'Personal' }}</span></span>
-          <span class="cifra" :class="{ rojo: Number(a.balance) < 0 }">${{ dinero(Number(a.balance)) }}</span>
-          <button v-if="esMio(a.owner_id)" class="btn-icono" :aria-label="`Borrar ${a.name}`" @click="borrarCuenta(a.id, a.name)"><Icono nombre="cerrar" :tam="18" /></button>
-        </div>
-        <template v-if="esMio(a.owner_id)">
-          <form v-if="editandoTarjeta === a.id" class="fila tarjeta-form" @submit.prevent="guardarTarjeta">
-            <label class="campo">Tarjeta en Wallet<input v-model="tarjetaTexto" type="text" placeholder="Ej: Visa Pichincha" /></label>
-            <button class="btn primario" type="submit" style="flex: 0 0 auto; align-self: flex-end">Guardar</button>
-          </form>
-          <button v-else class="tarjeta-link" @click="editarTarjeta(a.id, a.tarjeta)">
-            {{ a.tarjeta ? `Tarjeta: ${a.tarjeta}` : `Tarjeta: se reconoce si su nombre incluye “${a.name}”` }} · cambiar
-          </button>
-        </template>
+      <div v-if="accounts.length" class="totales-cuentas">
+        <span>Tienes <strong class="cifra">${{ dinero(totalDebito) }}</strong></span>
+        <span v-if="totalDeuda > 0">Debes <strong class="cifra rojo">${{ dinero(totalDeuda) }}</strong></span>
       </div>
-      <p v-if="!accounts.length" class="muted" style="margin: 0">Agrega tus cuentas con el saldo de hoy; los gastos que les asignes se descuentan solos.</p>
+      <div v-for="a in [...misCuentas, ...compartidas]" :key="a.id" class="fila-item">
+        <span class="etiqueta-tipo" :class="a.tipo">{{ a.tipo === 'credito' ? 'Crédito' : 'Débito' }}</span>
+        <span class="mov-info"><strong>{{ a.name }}</strong><span>{{ a.is_shared ? `Compartida${esMio(a.owner_id) ? '' : ' · ' + nombreDe(a.owner_id)}` : 'Personal' }}</span></span>
+        <span v-if="a.tipo === 'credito'" class="cifra rojo" style="text-align: right">Debes ${{ dinero(Math.max(0, -Number(a.balance))) }}</span>
+        <span v-else class="cifra" :class="{ rojo: Number(a.balance) < 0 }">${{ dinero(Number(a.balance)) }}</span>
+        <button v-if="esMio(a.owner_id)" class="btn-icono" :aria-label="`Borrar ${a.name}`" @click="borrarCuenta(a.id, a.name)"><Icono nombre="cerrar" :tam="18" /></button>
+      </div>
+      <p v-if="!accounts.length" class="muted" style="margin: 0">Agrega tus cuentas (Pichincha, Produbanco, Efectivo…) y tus tarjetas de crédito. Cuando registres un gasto eliges de cuál salió.</p>
     </section>
 
     <!-- Pareja -->
@@ -170,19 +164,19 @@ const salir = async () => {
             <button class="btn negro" style="margin-top: 6px" @click="copiar(apiKey, 'clave')">{{ copiado === 'clave' ? '¡Clave copiada!' : 'Copiar mi clave' }}</button>
           </li>
           <li>
-            <strong>Instala el atajo</strong> desde el iPhone. Cuando lo pida, pega tu clave.
+            <strong>Instala el atajo</strong> desde el iPhone. Cuando lo pida, pega tu clave. Cada vez que pagues te mostrará el monto y te preguntará <b>de qué cuenta salió</b> (tu lista de arriba) y <b>en qué gastaste</b>.
             <a class="btn primario" style="margin-top: 6px" :href="urlInstalar">Instalar “Registrar gasto”</a>
           </li>
           <li>
             <strong>Crea la automatización</strong> (Apple no deja compartirla, son 3 toques):
             <ol class="sub">
               <li>App <b>Atajos</b> → <b>Automatización</b> → <b>+</b> → <b>Transacción</b> → elige tus tarjetas → <b>Ejecutar inmediatamente</b>.</li>
-              <li>Agrega <b>Texto</b> y escribe dentro: <b>Importe</b> | <b>Comercio</b> | <b>Tarjeta</b> (las tres son variables del pago, separadas por la barra <code>|</code>).</li>
+              <li>Agrega <b>Texto</b> y escribe dentro: <b>Importe</b> | <b>Comercio</b> (las dos son variables del pago, separadas por la barra <code>|</code>).</li>
               <li>Agrega <b>Ejecutar atajo</b> → <b>Registrar gasto</b>. Listo.</li>
             </ol>
           </li>
         </ol>
-        <p style="margin: 0; font-size: 14px">El gasto se descuenta de la cuenta de la <b>tarjeta con la que pagaste</b> (configúralo arriba en Cuentas). Si no la reconoce, la notificación te avisa y la eliges al clasificar.</p>
+        <p style="margin: 0; font-size: 14px">Si eliges “Elegir después”, el gasto queda por clasificar y la app te pregunta la cuenta y la categoría.</p>
         <p style="margin: 0; font-size: 14px">Bonus: si pagas en efectivo, ejecuta “Registrar gasto” a mano (o desde un widget) y escribe algo como <i>12,50 almuerzo</i>.</p>
 
         <details class="manual">
@@ -193,7 +187,7 @@ const salir = async () => {
               <button class="btn mini" @click="copiar(urlAtajo, 'url')">{{ copiado === 'url' ? 'URL copiada' : 'Copiar URL' }}</button>
               con encabezado <code>apikey</code>
               <button class="btn mini" @click="copiar(supabaseAnonKey, 'anon')">{{ copiado === 'anon' ? 'Copiado' : 'Copiar valor' }}</button>
-              y JSON: <code>p_api_key</code>, <code>p_texto</code> (Importe | Comercio | Tarjeta), <code>p_category</code>, opcional <code>p_account_name</code> y <code>p_compartido</code>.</li>
+              y JSON: <code>p_api_key</code>, <code>p_texto</code> (Importe | Comercio), <code>p_category</code>, opcional <code>p_account_name</code> y <code>p_compartido</code>.</li>
             <li><b>Obtener valor del diccionario</b> <code>mensaje</code> → <b>Mostrar notificación</b>.</li>
           </ol>
           <p style="margin: 0; font-size: 14px">Para que el atajo abra la app en “por clasificar”: <b>Abrir URL</b>
@@ -217,10 +211,10 @@ const salir = async () => {
 .form { display: flex; flex-direction: column; gap: 10px; }
 .check { display: flex; gap: 10px; align-items: center; font-size: 14px; font-weight: 600; }
 .check input { width: 22px; height: 22px; accent-color: var(--azul); }
-.cuenta { border-top: var(--borde); padding-top: 4px; }
-.cuenta .fila-item { border-top: none; }
-.tarjeta-link { background: none; border: none; padding: 0 0 8px; text-align: left; font: inherit; font-size: 13px; color: var(--gris); text-decoration: underline; cursor: pointer; min-height: 32px; }
-.tarjeta-form { padding-bottom: 8px; }
+.totales-cuentas { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; border-top: var(--borde); padding-top: 10px; }
+.totales-cuentas .cifra { font-size: 18px; }
+.etiqueta-tipo { font-size: 11px; font-weight: 800; border: var(--borde); border-radius: 8px; padding: 3px 6px; text-transform: uppercase; background: var(--menta); }
+.etiqueta-tipo.credito { background: var(--durazno); }
 .fila-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: var(--borde); }
 .codigo { justify-content: space-between; }
 .clave { display: flex; flex-direction: column; gap: 6px; }

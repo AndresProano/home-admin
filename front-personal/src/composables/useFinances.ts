@@ -6,9 +6,9 @@ export interface BankAccount {
   owner_id: string
   is_shared: boolean
   name: string
+  /** débito: saldo disponible · crédito: saldo negativo = lo que debes */
   balance: number
-  /** cómo se llama su tarjeta en Wallet (para que el atajo sepa de qué cuenta descontar) */
-  tarjeta?: string | null
+  tipo: 'debito' | 'credito'
 }
 
 export interface Expense {
@@ -120,10 +120,10 @@ export function useFinances() {
     accounts.value = data ?? []
   }
 
-  const addAccount = async (userId: string, name: string, balance: number, isShared: boolean, tarjeta: string | null = null) => {
+  const addAccount = async (userId: string, name: string, balance: number, isShared: boolean, tipo: 'debito' | 'credito' = 'debito') => {
     const { data, error } = await supabase
       .from('bank_accounts')
-      .insert({ owner_id: userId, name, balance, is_shared: isShared, tarjeta: tarjeta?.trim() || null })
+      .insert({ owner_id: userId, name, balance, is_shared: isShared, tipo })
       .select()
       .single()
 
@@ -132,7 +132,7 @@ export function useFinances() {
     return data
   }
 
-  const updateAccount = async (accountId: string, changes: Partial<Pick<BankAccount, 'name' | 'tarjeta'>>) => {
+  const updateAccount = async (accountId: string, changes: Partial<Pick<BankAccount, 'name' | 'tipo' | 'balance'>>) => {
     const { data, error } = await supabase
       .from('bank_accounts')
       .update(changes)
