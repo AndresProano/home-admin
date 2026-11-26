@@ -6,14 +6,16 @@ import Avatar from '@/components/Avatar.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useFinances, type Expense } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
-import { TOTAL, colorDe, nombreCategoria } from '@/lib/categorias'
+import { TOTAL, SIN_CLASIFICAR, colorDe, nombreCategoria } from '@/lib/categorias'
+import { interpretarVoz } from '@/lib/voz'
+import { CATEGORIA_DIGITAL } from '@/lib/impuestos'
 import { aISO, hoy, ayer, fechaLarga, dinero } from '@/lib/fechas'
 import { estadoPresupuesto } from '@/lib/presupuesto'
 
 const router = useRouter()
 const route = useRoute()
 const { user } = useAuth()
-const { accounts, expenses, budgets, pendingReview, getDisplayName } = useFinances()
+const { accounts, expenses, budgets, pendingReview, getDisplayName, addExpense, removeExpense, ivaDigitalDe } = useFinances()
 const { lista, compartido, tienePareja, cargar, abrirClasificar, abrirNuevo, abrirMovimiento, nombreDe, fotoDe } = useApp()
 
 const cargando = ref(true)
@@ -77,30 +79,95 @@ const detalle = (e: Expense) => esTransfer(e) ? `${etiquetaFecha(e.date)} · ${n
   compartido.value && e.owner_id !== user.value?.id ? nombreDe(e.owner_id) : '',
 ].filter(Boolean).join(' · ')
 
-/* Dictar un gasto: "gasté 12,50 en almuerzo" */
+/* ---------- Dictar: "gasté 12,50 en almuerzo con la visa" → se guarda solo ---------- */
 const escuchando = ref(false)
 const dictar = () => {
   const w = window as any
   const SR = w.SpeechRecognition || w.webkitSpeechRecognition
-  if (!SR) { alert('Este navegador no permite dictar.'); return }
+  if (!SR) { alert('Este navegador no permite dictar. Usa el micrófono del teclado del iPhone en el botón +.'); return }
   const r = new SR()
   r.lang = 'es-EC'
   r.interimResults = false
   escuchando.value = true
-  r.onresult = (ev: any) => { interpretar(ev.results[0][0].transcript); escuchando.value = false }
+  r.onresult = (ev: any) => { escuchando.value = false; guardarDictado(ev.results[0][0].transcript) }
   r.onerror = () => { escuchando.value = false }
   r.onend = () => { escuchando.value = false }
   r.start()
 }
-const interpretar = (texto: string) => {
-  const m = texto.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:d[oó]lares?|\$)?/i)
-  const amount = m?.[1] ? parseFloat(m[1].replace(',', '.')) : undefined
-  const ingreso = /(?:me pagaron|recib[ií]|cobr[eé]|gan[eé]|ingreso|sueldo|salario)/i.test(texto)
-  let desc = texto.replace(m?.[0] || '', '')
-    .replace(/^(?:yo\s+)?(?:gast[eé]|pagu[eé]|compr[eé]|me pagaron|recib[ií]|cobr[eé]|gan[eé])\s*/i, '')
-    .replace(/^(?:en|de|por|para)\s+/i, '').trim()
-  if (!desc) desc = texto
-  abrirNuevo({ description: desc.charAt(0).toUpperCase() + desc.slice(1), amount, type: ingreso ? 'income' : 'expense' })
+
+interface AvisoVoz { oido: string; mov: Expense; iva: Expense | null; resumen: string; falta: string }
+const aviso = ref<AvisoVoz | null>(null)
+let timerAviso: ReturnType<typeof setTimeout> | undefined
+const mostrarAviso = (a: AvisoVoz) => {
+  aviso.value = a
+  clearTimeout(timerAviso)
+  timerAviso = setTimeout(() => { aviso.value = null }, 12000)
+}
+
+/** La última cuenta propia que usaste en un gasto (para cuando no la dices) */
+const ultimaCuenta = () => {
+  const mias = new Set(accounts.value.filter(a => a.owner_id === user.value?.id).map(a => a.id))
+  return expenses.value.find(e => e.owner_id === user.value?.id && e.account_id && mias.has(e.account_id) && e.type !== 'transfer')?.account_id ?? null
+}
+
+const guardarDictado = async (texto: string) => {
+  if (!user.value) return
+  const mias = accounts.value.filter(a => a.owner_id === user.value?.id)
+  const r = interpretarVoz(texto, mias)
+
+  // sin monto: abrir la hoja con lo que se entendió
+  if (!r.monto || r.monto <= 0) {
+    abrirNuevo({ description: r.descripcion, type: r.tipo, category: r.categoria ?? undefined, date: r.fecha,
+      account_id: r.cuentaId === undefined ? undefined : r.cuentaId })
+    return
+  }
+
+  const cuentaId = r.cuentaId !== undefined ? r.cuentaId : ultimaCuenta()
+  const cta = accounts.value.find(a => a.id === cuentaId)
+  const categoria = r.categoria ?? SIN_CLASIFICAR
+  const exterior = r.tipo === 'expense' && categoria === CATEGORIA_DIGITAL
+  const datos = {
+    type: r.tipo, description: r.descripcion, amount: Math.round(r.monto * 100) / 100, category: categoria,
+    date: r.fecha, account_id: cuentaId, to_account_id: null, is_shared: compartido.value,
+    payment_method: !cta ? 'cash' : cta.subtipo === 'credito' ? 'credit' : 'debit',
+    exterior, needs_review: !r.categoria,
+  }
+  try {
+    const mov = await addExpense(user.value.id, datos) as Expense
+    let iva: Expense | null = null
+    if (exterior) {
+      const montoIva = Math.round(datos.amount * ivaDigitalDe(user.value.id)) / 100
+      if (montoIva > 0) iva = await addExpense(user.value.id, { ...datos, description: `IVA ${datos.description}`.slice(0, 200), amount: montoIva, exterior: false }) as Expense
+    }
+    const cuandoTxt = r.fecha === hoy() ? 'hoy' : r.fecha === ayer() ? 'ayer' : fechaLarga(r.fecha)
+    mostrarAviso({
+      oido: texto,
+      mov, iva,
+      resumen: [
+        `${r.descripcion} ${r.tipo === 'income' ? '+' : '−'}$${dinero(datos.amount)}${iva ? ` + IVA $${dinero(Number(iva.amount))}` : ''}`,
+        r.categoria ?? '',
+        cta ? cta.name : 'efectivo',
+        cuandoTxt,
+      ].filter(Boolean).join(' · '),
+      falta: r.categoria ? '' : 'Falta la categoría',
+    })
+  } catch (e: any) {
+    alert('No se pudo guardar: ' + (e.message ?? e))
+  }
+}
+
+const editarDictado = () => {
+  if (!aviso.value) return
+  const m = expenses.value.find(e => e.id === aviso.value!.mov.id) ?? aviso.value.mov
+  aviso.value = null
+  abrirMovimiento(m)
+}
+const deshacerDictado = async () => {
+  const a = aviso.value
+  if (!a) return
+  aviso.value = null
+  await removeExpense(a.mov.id)
+  if (a.iva) await removeExpense(a.iva.id)
 }
 </script>
 
@@ -189,10 +256,29 @@ const interpretar = (texto: string) => {
         <span class="mov-monto" :class="{ ingreso: e.type === 'income' }">{{ esTransfer(e) ? '' : e.type === 'income' ? '+' : '−' }}${{ dinero(Number(e.amount)) }}</span>
       </button>
     </div>
+    <!-- Aviso de lo que se guardó por voz -->
+    <div v-if="aviso" class="aviso-voz bloque sombra" role="status" aria-live="polite">
+      <span class="muted oido">“{{ aviso.oido }}”</span>
+      <strong>Guardado: {{ aviso.resumen }}</strong>
+      <span v-if="aviso.falta" class="rojo" style="font-size: 13px; font-weight: 600">{{ aviso.falta }}</span>
+      <div class="acciones">
+        <button class="btn" @click="deshacerDictado">Deshacer</button>
+        <button class="btn primario" @click="editarDictado">{{ aviso.falta ? 'Clasificar' : 'Editar' }}</button>
+      </div>
+      <button class="cerrar-aviso" aria-label="Cerrar" @click="aviso = null"><Icono nombre="cerrar" :tam="16" /></button>
+    </div>
   </main>
 </template>
 
 <style scoped>
+.aviso-voz {
+  position: fixed; left: 12px; right: 12px; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 60;
+  max-width: 496px; margin: 0 auto; background: var(--amarillo);
+  display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; animation: subir 0.2s ease;
+}
+.aviso-voz .oido { color: var(--tinta); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 28px; }
+.aviso-voz .btn { min-height: 42px; }
+.cerrar-aviso { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border: none; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .enlace-avatar { display: inline-flex; text-decoration: none; border-radius: 50%; }
 .heroe { display: flex; flex-direction: column; gap: 10px; padding: 18px; }
 .etiqueta { font-size: 14px; font-weight: 600; }
