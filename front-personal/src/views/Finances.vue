@@ -37,6 +37,8 @@ const gastadoMes = computed(() => delMes.value.filter(e => (e.type || 'expense')
 const ingresoMes = computed(() => delMes.value.filter(e => e.type === 'income').reduce((s, e) => s + Number(e.amount), 0))
 const cuentasLista = computed(() => accounts.value.filter(a => a.is_shared === compartido.value))
 const saldo = computed(() => cuentasLista.value.filter(a => a.tipo !== 'credito').reduce((s, a) => s + Number(a.balance), 0))
+const esTransfer = (e: Expense) => e.type === 'transfer'
+const nombreCuenta = (id: string | null | undefined) => (id ? accounts.value.find(a => a.id === id)?.name : '') ?? ''
 const deuda = computed(() => -cuentasLista.value.filter(a => a.tipo === 'credito').reduce((s, a) => s + Number(a.balance), 0))
 
 /* Presupuestos visibles */
@@ -68,7 +70,7 @@ const fichas = computed(() => estados.value
 /** Últimos movimientos de la lista */
 const ultimos = computed(() => expenses.value.filter(enLista).slice(0, 5))
 const etiquetaFecha = (d: string) => d === hoy() ? 'Hoy' : d === ayer() ? 'Ayer' : fechaLarga(d)
-const detalle = (e: Expense) => [
+const detalle = (e: Expense) => esTransfer(e) ? `${etiquetaFecha(e.date)} · ${nombreCuenta(e.account_id)} → ${nombreCuenta(e.to_account_id)}` : [
   etiquetaFecha(e.date),
   e.needs_review ? 'toca para clasificar' : e.category,
   compartido.value && e.owner_id !== user.value?.id ? nombreDe(e.owner_id) : '',
@@ -127,8 +129,8 @@ const interpretar = (texto: string) => {
         <div class="pastillas">
           <span class="pastilla blanca">{{ heroe.restante >= 0 ? `$${dinero(heroe.porDia)} por día` : '¡Se acabó el presupuesto!' }}</span>
           <span class="pastilla">de ${{ dinero(heroe.de) }}</span>
-          <span class="pastilla">Tienes ${{ dinero(saldo) }}</span>
-          <span v-if="deuda > 0" class="pastilla">Debes ${{ dinero(deuda) }} en tarjetas</span>
+          <RouterLink to="/cuentas" class="pastilla">Tienes ${{ dinero(saldo) }} ›</RouterLink>
+          <RouterLink v-if="deuda > 0" to="/cuentas" class="pastilla">Debes ${{ dinero(deuda) }} en tarjetas ›</RouterLink>
         </div>
       </template>
       <template v-else>
@@ -136,8 +138,8 @@ const interpretar = (texto: string) => {
         <span class="cifra grande">${{ dinero(gastadoMes) }}</span>
         <div class="pastillas">
           <span class="pastilla blanca">Entró ${{ dinero(ingresoMes) }}</span>
-          <span class="pastilla">Tienes ${{ dinero(saldo) }}</span>
-          <span v-if="deuda > 0" class="pastilla">Debes ${{ dinero(deuda) }} en tarjetas</span>
+          <RouterLink to="/cuentas" class="pastilla">Tienes ${{ dinero(saldo) }} ›</RouterLink>
+          <RouterLink v-if="deuda > 0" to="/cuentas" class="pastilla">Debes ${{ dinero(deuda) }} en tarjetas ›</RouterLink>
         </div>
       </template>
     </section>
@@ -179,11 +181,11 @@ const interpretar = (texto: string) => {
     </div>
     <div v-else>
       <button v-for="e in ultimos" :key="e.id" class="mov" @click="abrirMovimiento(e)">
-        <span class="icono-cat" :style="{ background: e.type === 'income' ? 'var(--menta)' : colorDe(e.needs_review ? 'Sin clasificar' : e.category) }">
-          <Icono :nombre="e.type === 'income' ? 'ingreso' : e.needs_review ? 'Sin clasificar' : e.category" :tam="18" />
+        <span class="icono-cat" :style="{ background: esTransfer(e) ? 'var(--neutro)' : e.type === 'income' ? 'var(--menta)' : colorDe(e.needs_review ? 'Sin clasificar' : e.category) }">
+          <Icono :nombre="esTransfer(e) ? 'transferencia' : e.type === 'income' ? 'ingreso' : e.needs_review ? 'Sin clasificar' : e.category" :tam="18" />
         </span>
         <span class="mov-info"><strong>{{ e.description }}</strong><span>{{ detalle(e) }}</span></span>
-        <span class="mov-monto" :class="{ ingreso: e.type === 'income' }">{{ e.type === 'income' ? '+' : '−' }}${{ dinero(Number(e.amount)) }}</span>
+        <span class="mov-monto" :class="{ ingreso: e.type === 'income' }">{{ esTransfer(e) ? '' : e.type === 'income' ? '+' : '−' }}${{ dinero(Number(e.amount)) }}</span>
       </button>
     </div>
   </main>
@@ -197,6 +199,7 @@ const interpretar = (texto: string) => {
 .grande.pasado { color: var(--amarillo); }
 .pastillas { display: flex; flex-wrap: wrap; gap: 8px; }
 .pastilla { border-radius: 999px; padding: 6px 10px; font-size: 13px; font-weight: 600; background: rgba(255, 255, 255, 0.18); }
+a.pastilla { color: #fff; text-decoration: none; }
 .pastilla.blanca { background: #fff; color: var(--tinta); }
 .pendientes { display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer; width: 100%; font: inherit; color: inherit; }
 .pend-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

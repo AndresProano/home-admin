@@ -8,8 +8,18 @@ export interface BankAccount {
   name: string
   /** débito: saldo disponible · crédito: saldo negativo = lo que debes */
   balance: number
+  /** se calcula solo desde el subtipo */
   tipo: 'debito' | 'credito'
+  subtipo: 'corriente' | 'ahorros' | 'meta' | 'inversion' | 'efectivo' | 'credito'
+  entidad?: string | null
+  tasa_anual?: number | null
+  meta_monto?: number | null
+  meta_fecha?: string | null
+  vencimiento?: string | null
+  nota?: string | null
 }
+
+export type CuentaEditable = Partial<Omit<BankAccount, 'id' | 'owner_id' | 'tipo'>>
 
 export interface Expense {
   id: string
@@ -22,8 +32,10 @@ export interface Expense {
   date: string
   created_at: string
   payment_method?: string
+  /** 'expense' | 'income' | 'transfer' (entre tus cuentas: account_id → to_account_id) */
   type?: string
   needs_review?: boolean
+  to_account_id?: string | null
 }
 
 export interface Budget {
@@ -41,6 +53,7 @@ export interface Budget {
 export type NewExpense = {
   description: string; amount: number; category: string; date: string
   account_id: string | null; is_shared: boolean; payment_method?: string; type?: string
+  to_account_id?: string | null
 }
 
 export interface FinancePartner {
@@ -120,10 +133,10 @@ export function useFinances() {
     accounts.value = data ?? []
   }
 
-  const addAccount = async (userId: string, name: string, balance: number, isShared: boolean, tipo: 'debito' | 'credito' = 'debito') => {
+  const addAccount = async (userId: string, cuenta: CuentaEditable & { name: string }) => {
     const { data, error } = await supabase
       .from('bank_accounts')
-      .insert({ owner_id: userId, name, balance, is_shared: isShared, tipo })
+      .insert({ ...cuenta, owner_id: userId })
       .select()
       .single()
 
@@ -132,7 +145,7 @@ export function useFinances() {
     return data
   }
 
-  const updateAccount = async (accountId: string, changes: Partial<Pick<BankAccount, 'name' | 'tipo' | 'balance'>>) => {
+  const updateAccount = async (accountId: string, changes: CuentaEditable) => {
     const { data, error } = await supabase
       .from('bank_accounts')
       .update(changes)

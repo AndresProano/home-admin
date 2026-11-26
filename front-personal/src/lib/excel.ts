@@ -118,8 +118,11 @@ export async function exportarMovimientos(movs: Expense[], cuentas: BankAccount[
   const filas = [
     [...COLUMNAS],
     ...[...movs].sort((a, b) => a.date.localeCompare(b.date)).map(e => [
-      e.date, e.description, Number(e.amount), e.type === 'income' ? 'Ingreso' : 'Gasto',
-      e.category === SIN_CLASIFICAR ? '' : e.category, nombre(e.account_id), e.is_shared ? 'Sí' : 'No',
+      e.date,
+      e.type === 'transfer' ? `${e.description} (${nombre(e.account_id)} → ${nombre(e.to_account_id ?? null)})` : e.description,
+      Number(e.amount),
+      e.type === 'income' ? 'Ingreso' : e.type === 'transfer' ? 'Transferencia' : 'Gasto',
+      e.category === SIN_CLASIFICAR || e.type === 'transfer' ? '' : e.category, nombre(e.account_id), e.is_shared ? 'Sí' : 'No',
     ]),
   ]
   const hoja = XLSX.utils.aoa_to_sheet(filas)
@@ -195,6 +198,7 @@ export async function leerArchivo(archivo: File, cuentas: BankAccount[], userId:
     if (montoBruto === null || montoBruto === 0) { res.omitidas.push(`Fila ${n}: falta el monto`); return }
 
     const tipoTxt = norm(val(c.tipo))
+    if (tipoTxt.startsWith('transfer')) { res.omitidas.push(`Fila ${n}: las transferencias no se importan (regístralas en Mis cuentas)`); return }
     const type: 'expense' | 'income' = tipoTxt.startsWith('ingreso') || tipoTxt === 'income' || tipoTxt.startsWith('entrada')
       ? 'income' : 'expense'
     const amount = Math.abs(Math.round(montoBruto * 100) / 100)

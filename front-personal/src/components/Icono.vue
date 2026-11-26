@@ -33,6 +33,13 @@ const ICONOS: Record<string, string[]> = {
   mic: ['M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z', 'M19 10v1a7 7 0 0 1-14 0v-1', 'M12 18v4'],
   pareja: ['M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M2 21v-1a6 6 0 0 1 12 0v1', 'M16 3.1a4 4 0 0 1 0 7.8', 'M22 21v-1a6 6 0 0 0-4-5.7'],
   copiar: ['M9 9h11v11H9z', 'M5 15H4V4h11v1'],
+  banco: ['M3 21h18', 'M3 10h18', 'M5 6l7-3 7 3', 'M4 10v11', 'M20 10v11', 'M8 14v3', 'M12 14v3', 'M16 14v3'],
+  efectivo: ['M2 6h20v12H2z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M6 12h.01', 'M18 12h.01'],
+  meta: ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z', 'M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12z', 'M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'],
+  inversion: ['M22 7l-8.5 8.5-5-5L2 17', 'M16 7h6v6'],
+  tarjeta: ['M2 5h20v14H2z', 'M2 10h20'],
+  transferencia: ['M17 3l4 4-4 4', 'M21 7H7', 'M7 21l-4-4 4-4', 'M3 17h14'],
+  editar: ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'],
 }
 
 const props = withDefaults(defineProps<{ nombre: string; tam?: number; grosor?: number }>(), { tam: 20, grosor: 2 })

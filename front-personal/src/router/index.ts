@@ -4,6 +4,7 @@ import Inicio from '../views/Finances.vue'
 import Presupuestos from '../views/Budgets.vue'
 import Movimientos from '../views/Movimientos.vue'
 import Ajustes from '../views/Ajustes.vue'
+import Cuentas from '../views/Cuentas.vue'
 import Login from '../views/loginView.vue'
 
 const router = createRouter({
@@ -15,6 +16,7 @@ const router = createRouter({
     { path: '/presupuestos', name: 'Presupuestos', component: Presupuestos, meta: { requiresAuth: true } },
     { path: '/movimientos', name: 'Movimientos', component: Movimientos, meta: { requiresAuth: true } },
     { path: '/ajustes', name: 'Ajustes', component: Ajustes, meta: { requiresAuth: true } },
+    { path: '/cuentas', name: 'Cuentas', component: Cuentas, meta: { requiresAuth: true } },
     { path: '/:pathMatch(.*)*', redirect: '/finances' },
   ],
   scrollBehavior: () => ({ top: 0 }),

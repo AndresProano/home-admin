@@ -1,45 +1,27 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, RouterLink } from 'vue-router'
 import Icono from '@/components/Icono.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useFinances } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
 import { dinero, fechaLarga } from '@/lib/fechas'
+import { resumenCuentas } from '@/lib/cuentas'
 import type { Lectura } from '@/lib/excel'
 import { CATEGORIAS } from '@/lib/categorias'
 
 const router = useRouter()
 const { user, signOut } = useAuth()
-const { accounts, expenses, importarMovimientos, partner, apiKey, addAccount, removeAccount, createPartnerInvite, joinPartner, removePartner,
+const { accounts, expenses, importarMovimientos, partner, apiKey, createPartnerInvite, joinPartner, removePartner,
   generateApiKey, getDisplayName } = useFinances()
-const { cargar, olvidarCarga, parejaId, tienePareja, nombreDe, esMio } = useApp()
+const { cargar, olvidarCarga, parejaId, esMio } = useApp()
 
 onMounted(() => cargar())
 
 const nombre = computed(() => user.value ? getDisplayName(user.value.id) : '')
 
 /* Cuentas */
-const formCuenta = ref(false)
-const cuentaNombre = ref('')
-const cuentaSaldo = ref<number | null>(null)
-const cuentaCompartida = ref(false)
-const cuentaTipo = ref<'debito' | 'credito'>('debito')
-const misCuentas = computed(() => accounts.value.filter(a => !a.is_shared))
-const compartidas = computed(() => accounts.value.filter(a => a.is_shared))
-const agregarCuenta = async () => {
-  if (!cuentaNombre.value.trim() || !user.value) return
-  // crédito: lo que debes se guarda como saldo negativo
-  const monto = Number(cuentaSaldo.value || 0)
-  const saldo = cuentaTipo.value === 'credito' ? -Math.abs(monto) : monto
-  await addAccount(user.value.id, cuentaNombre.value.trim(), saldo, cuentaCompartida.value, cuentaTipo.value)
-  cuentaNombre.value = ''; cuentaSaldo.value = null; cuentaCompartida.value = false; cuentaTipo.value = 'debito'; formCuenta.value = false
-}
-const totalDebito = computed(() => accounts.value.filter(a => a.tipo !== 'credito').reduce((s, a) => s + Number(a.balance), 0))
-const totalDeuda = computed(() => -accounts.value.filter(a => a.tipo === 'credito').reduce((s, a) => s + Number(a.balance), 0))
-const borrarCuenta = async (id: string, nombre: string) => {
-  if (confirm(`¿Borrar la cuenta "${nombre}"? Los movimientos se quedan, solo pierden la cuenta.`)) await removeAccount(id)
-}
+const resumen = computed(() => resumenCuentas(accounts.value.filter(a => esMio(a.owner_id))))
 
 /* Pareja */
 const modoPareja = ref<'unirme' | 'invitar'>('unirme')
@@ -141,37 +123,17 @@ const salir = async () => {
     </header>
 
     <!-- Cuentas -->
-    <section class="bloque seccion">
-      <div class="cabecera" style="min-height: 0">
-        <h2 class="subtitulo" style="margin: 0">Cuentas</h2>
-        <button class="btn-icono amarillo" aria-label="Agregar cuenta" @click="formCuenta = !formCuenta"><Icono nombre="mas" :grosor="2.6" /></button>
-      </div>
-      <form v-if="formCuenta" class="form" @submit.prevent="agregarCuenta">
-        <div class="seg">
-          <button type="button" :class="{ on: cuentaTipo === 'debito' }" @click="cuentaTipo = 'debito'">Débito / banco</button>
-          <button type="button" :class="{ on: cuentaTipo === 'credito' }" @click="cuentaTipo = 'credito'">Tarjeta de crédito</button>
-        </div>
-        <label class="campo">Nombre<input v-model="cuentaNombre" type="text" :placeholder="cuentaTipo === 'credito' ? 'Ej: Visa Produbanco' : 'Ej: Pichincha, Efectivo'" required /></label>
-        <label class="campo">{{ cuentaTipo === 'credito' ? '¿Cuánto debes hoy en esta tarjeta? ($)' : 'Saldo de hoy ($)' }}
-          <input v-model.number="cuentaSaldo" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00" />
-          <span class="muted" style="font-weight: 500">{{ cuentaTipo === 'credito' ? 'Cada gasto con esta tarjeta suma a lo que debes.' : 'Cada gasto de esta cuenta baja el saldo.' }}</span>
-        </label>
-        <label v-if="tienePareja" class="check"><input v-model="cuentaCompartida" type="checkbox" /> Es una cuenta compartida con mi pareja</label>
-        <button class="btn primario" type="submit">Agregar cuenta</button>
-      </form>
-      <div v-if="accounts.length" class="totales-cuentas">
-        <span>Tienes <strong class="cifra">${{ dinero(totalDebito) }}</strong></span>
-        <span v-if="totalDeuda > 0">Debes <strong class="cifra rojo">${{ dinero(totalDeuda) }}</strong></span>
-      </div>
-      <div v-for="a in [...misCuentas, ...compartidas]" :key="a.id" class="fila-item">
-        <span class="etiqueta-tipo" :class="a.tipo">{{ a.tipo === 'credito' ? 'Crédito' : 'Débito' }}</span>
-        <span class="mov-info"><strong>{{ a.name }}</strong><span>{{ a.is_shared ? `Compartida${esMio(a.owner_id) ? '' : ' · ' + nombreDe(a.owner_id)}` : 'Personal' }}</span></span>
-        <span v-if="a.tipo === 'credito'" class="cifra rojo" style="text-align: right">Debes ${{ dinero(Math.max(0, -Number(a.balance))) }}</span>
-        <span v-else class="cifra" :class="{ rojo: Number(a.balance) < 0 }">${{ dinero(Number(a.balance)) }}</span>
-        <button v-if="esMio(a.owner_id)" class="btn-icono" :aria-label="`Borrar ${a.name}`" @click="borrarCuenta(a.id, a.name)"><Icono nombre="cerrar" :tam="18" /></button>
-      </div>
-      <p v-if="!accounts.length" class="muted" style="margin: 0">Agrega tus cuentas (Pichincha, Produbanco, Efectivo…) y tus tarjetas de crédito. Cuando registres un gasto eliges de cuál salió.</p>
-    </section>
+    <RouterLink to="/cuentas" class="bloque seccion enlace-cuentas">
+      <span class="cabecera" style="min-height: 0">
+        <h2 class="subtitulo" style="margin: 0">Mis cuentas</h2>
+        <Icono nombre="flecha" :grosor="2.5" />
+      </span>
+      <span v-if="accounts.length" class="totales-cuentas">
+        <span>Tienes <strong class="cifra">${{ dinero(resumen.disponible + resumen.ahorro) }}</strong></span>
+        <span v-if="resumen.deuda > 0">Debes <strong class="cifra rojo">${{ dinero(resumen.deuda) }}</strong></span>
+      </span>
+      <span class="muted" style="color: var(--tinta)">Bancos, cuenta meta, pólizas, tarjetas y efectivo. Edítalas, transfiere entre ellas y mira cuánto te rinden.</span>
+    </RouterLink>
 
     <!-- Pareja -->
     <section class="bloque seccion" style="background: var(--lila)">
@@ -312,6 +274,7 @@ const salir = async () => {
 .form { display: flex; flex-direction: column; gap: 10px; }
 .check { display: flex; gap: 10px; align-items: center; font-size: 14px; font-weight: 600; }
 .check input { width: 22px; height: 22px; accent-color: var(--azul); }
+.enlace-cuentas { text-decoration: none; color: var(--tinta); box-shadow: var(--sombra-chica); }
 .totales-cuentas { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; border-top: var(--borde); padding-top: 10px; }
 .totales-cuentas .cifra { font-size: 18px; }
 .etiqueta-tipo { font-size: 11px; font-weight: 800; border: var(--borde); border-radius: 8px; padding: 3px 6px; text-transform: uppercase; background: var(--menta); }
