@@ -33,14 +33,25 @@ export interface EstadoPresupuesto {
   porUnidad: number
   unidad: 'día' | 'mes'
   nivel: 'ok' | 'alerta' | 'pasado'
+  /** solo compartidos: cuánto lleva gastado cada uno contra su aporte */
+  porPersona: { userId: string; gastado: number; aporte: number }[]
 }
 
 export const estadoPresupuesto = (b: Budget, gastos: Expense[], ref: Date): EstadoPresupuesto => {
   const periodo = b.period as Periodo
   const { inicio, fin } = rangoPeriodo(periodo, ref)
-  const gastado = gastos
-    .filter(e => e.date >= inicio && e.date < fin && gastoCuenta(b, e))
-    .reduce((s, e) => s + Number(e.amount), 0)
+  const delPeriodo = gastos.filter(e => e.date >= inicio && e.date < fin && gastoCuenta(b, e))
+  const gastado = delPeriodo.reduce((s, e) => s + Number(e.amount), 0)
+
+  let porPersona: EstadoPresupuesto['porPersona'] = []
+  if (b.is_shared) {
+    const ids = new Set([...Object.keys(b.aportes ?? {}), ...delPeriodo.map(e => e.owner_id)])
+    porPersona = [...ids].map(userId => ({
+      userId,
+      aporte: Number(b.aportes?.[userId] ?? 0),
+      gastado: delPeriodo.filter(e => e.owner_id === userId).reduce((s, e) => s + Number(e.amount), 0),
+    }))
+  }
   const monto = Number(b.amount)
   const restante = monto - gastado
 
@@ -64,7 +75,7 @@ export const estadoPresupuesto = (b: Budget, gastos: Expense[], ref: Date): Esta
   const nivel = porcentaje > 1 ? 'pasado' : (porcentaje >= 0.85 || gastado > esperado * 1.1 + 0.01) ? 'alerta' : 'ok'
 
   return { budget: b, gastado, restante, porcentaje, esperado, porUnidad,
-    unidad: periodo === 'mensual' ? 'día' : 'mes', nivel }
+    unidad: periodo === 'mensual' ? 'día' : 'mes', nivel, porPersona }
 }
 
 /** El presupuesto que afecta a un gasto: el de su categoría (mensual antes que anual) */

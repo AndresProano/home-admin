@@ -9,7 +9,16 @@ import { estadoPresupuesto, rangoPeriodo, gastoCuenta, type Periodo } from '@/li
 
 const router = useRouter()
 const { user, waitForAuth } = useAuth()
-const { expenses, budgets, partner, loadExpenses, loadBudgets, loadPartner, saveBudget, removeBudget } = useFinances()
+const { expenses, budgets, partner, loadExpenses, loadBudgets, loadPartner, saveBudget, removeBudget,
+  loadProfile, getDisplayName } = useFinances()
+
+/* Pareja (para presupuestos compartidos) */
+const parejaId = computed(() => {
+  const p = partner.value
+  if (!p || p.status !== 'active' || !user.value) return null
+  return p.user_a === user.value.id ? p.user_b : p.user_a
+})
+const nombreDe = (id: string) => id === user.value?.id ? 'Tú' : getDisplayName(id).split(' ')[0]
 
 const leer = (k: string, def: string) => { try { return localStorage.getItem(k) || def } catch { return def } }
 const guardarLS = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* sin storage */ } }
@@ -64,7 +73,7 @@ const sinPresupuesto = computed(() => {
     .filter(b => b.is_shared === compartido.value && (compartido.value || b.owner_id === user.value?.id))
     .map(b => b.category))
   const molde: Budget = { id: '', owner_id: user.value?.id ?? '', is_shared: compartido.value,
-    category: TOTAL, period: periodo.value, amount: 0 }
+    category: TOTAL, period: periodo.value, amount: 0, aportes: {} }
   const suma: Record<string, number> = {}
   for (const e of expenses.value) {
     if (e.date < inicio || e.date >= fin || !gastoCuenta(molde, e) || conPresupuesto.has(e.category)) continue
@@ -76,37 +85,52 @@ const sinPresupuesto = computed(() => {
 const pendientes = computed(() => expenses.value.filter(e => e.needs_review).length)
 
 /* Formulario */
-const form = ref<{ abierto: boolean; id: string | null; categoria: string; monto: number | null; periodo: Periodo }>(
-  { abierto: false, id: null, categoria: '', monto: null, periodo: 'mensual' })
+const form = ref<{ abierto: boolean; id: string | null; categoria: string; monto: number | null; periodo: Periodo
+  miParte: number | null; suParte: number | null }>(
+  { abierto: false, id: null, categoria: '', monto: null, periodo: 'mensual', miParte: null, suParte: null })
+
+/** En la lista compartida (con pareja) el presupuesto se arma con el aporte de cada uno */
+const esCompartidoForm = computed(() => compartido.value && !!parejaId.value)
+const totalForm = computed(() => esCompartidoForm.value
+  ? Number(form.value.miParte || 0) + Number(form.value.suParte || 0)
+  : Number(form.value.monto || 0))
 const error = ref('')
 
 const abrirNuevo = (categoria = '') => {
-  form.value = { abierto: true, id: null, categoria, monto: null, periodo: periodo.value }
+  form.value = { abierto: true, id: null, categoria, monto: null, periodo: periodo.value, miParte: null, suParte: null }
   error.value = ''
 }
 const abrirEditar = (b: Budget) => {
-  form.value = { abierto: true, id: b.id, categoria: b.category, monto: Number(b.amount), periodo: b.period }
+  const yo = user.value?.id ?? ''
+  const ella = parejaId.value ?? ''
+  const tieneAportes = Object.keys(b.aportes ?? {}).length > 0
+  form.value = {
+    abierto: true, id: b.id, categoria: b.category, monto: Number(b.amount), periodo: b.period,
+    // si un compartido viejo no tiene aportes, se reparte a la mitad
+    miParte: tieneAportes ? Number(b.aportes[yo] ?? 0) : Number(b.amount) / 2,
+    suParte: tieneAportes ? Number(b.aportes[ella] ?? 0) : Number(b.amount) / 2,
+  }
   error.value = ''
 }
 const equivalente = computed(() => {
-  const m = form.value.monto
+  const m = totalForm.value
   if (!m) return ''
   return form.value.periodo === 'anual' ? `≈ $${dinero(m / 12)} al mes` : `≈ $${dinero(m * 12)} al año`
 })
 
-/** Si es nuevo y ya existe uno igual, se reemplaza (upsert); si cambiaste categoría/periodo de uno existente, se borra el viejo */
 const guardar = async () => {
   error.value = ''
   if (!user.value) return
   if (!form.value.categoria) { error.value = 'Elige una categoría'; return }
-  if (!form.value.monto || form.value.monto <= 0) { error.value = 'Pon un monto mayor a 0'; return }
+  if (totalForm.value <= 0) { error.value = 'Pon un monto mayor a 0'; return }
+  const aportes: Record<string, number> = esCompartidoForm.value && parejaId.value
+    ? { [user.value.id]: Number(form.value.miParte || 0), [parejaId.value]: Number(form.value.suParte || 0) }
+    : {}
   try {
-    const anterior = form.value.id ? budgets.value.find(b => b.id === form.value.id) : null
-    const guardado = await saveBudget(user.value.id, {
+    await saveBudget(user.value.id, {
       category: form.value.categoria, period: form.value.periodo,
-      amount: form.value.monto, is_shared: compartido.value,
-    })
-    if (anterior && anterior.id !== guardado.id) await removeBudget(anterior.id)
+      amount: totalForm.value, is_shared: compartido.value, aportes,
+    }, form.value.id)
     periodo.value = form.value.periodo
     form.value.abierto = false
   } catch (e: any) { error.value = e.message ?? 'No se pudo guardar' }
@@ -121,7 +145,8 @@ onMounted(async () => {
   await waitForAuth()
   if (!user.value) return
   await loadPartner(user.value.id)
-  await Promise.all([loadExpenses(), loadBudgets()])
+  await Promise.all([loadExpenses(), loadBudgets(), loadProfile(user.value.id)])
+  if (parejaId.value) await loadProfile(parejaId.value)
 })
 </script>
 
@@ -167,7 +192,7 @@ onMounted(async () => {
       </div>
       <div class="pie">
         <template v-if="total.restante >= 0">Quedan ${{ dinero(total.restante) }}<template v-if="esActual"> · ${{ dinero(total.porUnidad) }} por {{ total.unidad }}</template></template>
-        <template v-else>Te pasaste ${{ dinero(-total.restante) }}</template>
+        <template v-else>{{ compartido ? 'Se pasaron' : 'Te pasaste' }} ${{ dinero(-total.restante) }}</template>
       </div>
     </div>
 
@@ -191,12 +216,20 @@ onMounted(async () => {
         <template v-if="e.restante >= 0">
           Quedan ${{ dinero(e.restante) }}<template v-if="esActual"> · ${{ dinero(e.porUnidad) }} por {{ e.unidad }}</template>
         </template>
-        <template v-else>Te pasaste ${{ dinero(-e.restante) }}</template>
+        <template v-else>{{ compartido ? 'Se pasaron' : 'Te pasaste' }} ${{ dinero(-e.restante) }}</template>
+      </div>
+      <div v-if="e.porPersona.length" class="personas">
+        <div v-for="p in e.porPersona" :key="p.userId" class="persona" :class="{ pasado: p.aporte > 0 && p.gastado > p.aporte }">
+          <span class="persona-nombre">{{ nombreDe(p.userId) }}</span>
+          <div class="persona-barra"><div :style="{ width: (p.aporte ? Math.min(100, p.gastado / p.aporte * 100) : 0) + '%' }"></div></div>
+          <span class="persona-cifra">${{ dinero(p.gastado) }}<small v-if="p.aporte"> / ${{ dinero(p.aporte) }}</small></span>
+        </div>
       </div>
     </div>
 
     <div v-if="!estados.length" class="vacio">
-      <p>No tienes presupuestos {{ periodo === 'anual' ? 'anuales' : 'mensuales' }} todavía.</p>
+      <p>No {{ compartido ? 'tienen' : 'tienes' }} presupuestos {{ compartido ? 'compartidos ' : '' }}{{ periodo === 'anual' ? 'anuales' : 'mensuales' }} todavía.</p>
+      <p v-if="compartido" class="muted">Ej: Salidas $100 cada uno = $200 al mes entre los dos. Cuentan los gastos marcados como compartidos.</p>
       <p class="muted">
         {{ periodo === 'anual'
           ? 'Úsalo para gastos grandes o irregulares: ropa, viajes, regalos, seguro, matrícula.'
@@ -224,7 +257,7 @@ onMounted(async () => {
     <div v-if="form.abierto" class="modal-overlay" @click.self="form.abierto = false">
       <form class="modal-sheet" @submit.prevent="guardar">
         <div class="sheet-handle"></div>
-        <h2>{{ form.id ? 'Editar presupuesto' : 'Nuevo presupuesto' }}</h2>
+        <h2>{{ form.id ? 'Editar presupuesto' : 'Nuevo presupuesto' }}{{ compartido ? ' compartido' : '' }}</h2>
 
         <div class="seg">
           <button type="button" :class="{ on: form.periodo === 'mensual' }" @click="form.periodo = 'mensual'">Mensual</button>
@@ -240,7 +273,23 @@ onMounted(async () => {
           </button>
         </div>
 
-        <label>
+        <template v-if="esCompartidoForm && parejaId">
+          <div class="pregunta">¿Cuánto pone cada uno {{ form.periodo === 'anual' ? 'al año' : 'al mes' }}?</div>
+          <div class="aportes">
+            <label>
+              Tu parte ($)
+              <input v-model.number="form.miParte" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00" />
+            </label>
+            <span class="mas">+</span>
+            <label>
+              Parte de {{ nombreDe(parejaId) }} ($)
+              <input v-model.number="form.suParte" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00" />
+            </label>
+          </div>
+          <p class="total-form">Presupuesto compartido: <strong>${{ dinero(totalForm) }}</strong>
+            <small v-if="equivalente" class="muted">&nbsp;· {{ equivalente }}</small></p>
+        </template>
+        <label v-else>
           Monto {{ form.periodo === 'anual' ? 'para todo el año' : 'por mes' }} ($)
           <input v-model.number="form.monto" type="number" step="0.01" min="1" inputmode="decimal" placeholder="0,00" />
           <small v-if="equivalente" class="muted">{{ equivalente }}</small>
@@ -311,6 +360,17 @@ onMounted(async () => {
 .sin-item span:first-child { flex: 1; }
 .sin-item button { background: none; border: 1px solid #2a2a4a; color: #6c63ff; border-radius: 8px; padding: 4px 8px; font-size: 0.8rem; cursor: pointer; }
 .nota { margin-top: 18px; line-height: 1.4; }
+.personas { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #22223a; padding-top: 8px; }
+.persona { display: grid; grid-template-columns: 70px 1fr auto; align-items: center; gap: 8px; font-size: 0.8rem; color: #c0c0d0; }
+.persona-nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.persona-barra { height: 5px; background: #2a2a4a; border-radius: 3px; overflow: hidden; }
+.persona-barra div { height: 100%; background: #8f88ff; }
+.persona.pasado .persona-barra div { background: #ff6b6b; }
+.persona-cifra small { color: #6a6a8a; }
+.aportes { display: flex; align-items: flex-end; gap: 8px; }
+.aportes label { flex: 1; min-width: 0; }
+.mas { color: #6a6a8a; padding-bottom: 24px; }
+.total-form { color: #c0c0d0; font-size: 0.9rem; margin: 0 0 8px; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: flex-end; justify-content: center; z-index: 100; }
 .modal-sheet {
   background: #16213e; border-radius: 24px 24px 0 0; padding: 20px 20px calc(24px + env(safe-area-inset-bottom));

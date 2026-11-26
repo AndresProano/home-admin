@@ -6,6 +6,7 @@ export const CATEGORIAS = [
   { nombre: 'Servicios', icono: '💡' },
   { nombre: 'Arriendo', icono: '🏠' },
   { nombre: 'Entretenimiento', icono: '🎬' },
+  { nombre: 'Salidas', icono: '🍻' },
   { nombre: 'Salud', icono: '💊' },
   { nombre: 'Compras', icono: '🛍️' },
   { nombre: 'Educación', icono: '📚' },
