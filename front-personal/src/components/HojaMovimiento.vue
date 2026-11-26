@@ -7,6 +7,7 @@ import { useApp } from '@/composables/useApp'
 import { CATEGORIAS, SIN_CLASIFICAR, colorDe } from '@/lib/categorias'
 import { hoy, ayer, fechaLarga, dinero } from '@/lib/fechas'
 import { estadoPresupuesto, presupuestoDeGasto } from '@/lib/presupuesto'
+import { infoSubtipo, esDeuda, deudaDe } from '@/lib/cuentas'
 
 /**
  * Hoja global para tres usos:
@@ -18,7 +19,9 @@ const { user } = useAuth()
 const { accounts, budgets, expenses, addExpense, updateExpense, removeExpense } = useFinances()
 const { hoja, compartido, tienePareja, colaClasificar, siguienteDeCola, saltar, cerrarHoja } = useApp()
 
-const tipo = ref<'expense' | 'income'>('expense')
+const tipo = ref<'expense' | 'income' | 'transfer'>('expense')
+/** transferencias: cuenta de destino */
+const hacia = ref<string | undefined>(undefined)
 const descripcion = ref('')
 const monto = ref<number | null>(null)
 const categoria = ref('')
@@ -38,7 +41,8 @@ const cargar = () => {
   if (!hoja.value) return
   const m = mov.value
   const p = hoja.value.prellenado ?? {}
-  tipo.value = (m?.type as 'expense' | 'income') || (p.type as 'expense' | 'income') || 'expense'
+  tipo.value = (m?.type as 'expense' | 'income' | 'transfer') || (p.type as 'expense' | 'income' | 'transfer') || 'expense'
+  hacia.value = m?.to_account_id ?? p.to_account_id ?? undefined
   descripcion.value = m && !m.needs_review ? m.description : (p.description ?? '')
   monto.value = m ? Number(m.amount) : (p.amount ?? null)
   categoria.value = m && m.category !== SIN_CLASIFICAR ? m.category : (p.category ?? '')
@@ -52,10 +56,13 @@ const cargar = () => {
 }
 watch(() => [hoja.value, mov.value?.id], cargar, { immediate: true })
 
-const titulo = computed(() => ({ clasificar: '¿En qué gastaste?', editar: 'Editar', nuevo: 'Nuevo' }[modo.value]))
+const titulo = computed(() => modo.value === 'clasificar' ? '¿En qué gastaste?'
+  : tipo.value === 'transfer' ? (modo.value === 'editar' ? 'Editar transferencia' : 'Transferir') : modo.value === 'editar' ? 'Editar' : 'Nuevo')
+const ORDEN = { disponible: 0, deuda: 1, ahorro: 2 } as const
 const misCuentas = computed(() => accounts.value
   .filter(c => c.owner_id === user.value?.id)
-  .sort((a, b) => Number(a.tipo === 'credito') - Number(b.tipo === 'credito') || a.name.localeCompare(b.name)))
+  .sort((a, b) => ORDEN[infoSubtipo(a.subtipo).grupo] - ORDEN[infoSubtipo(b.subtipo).grupo] || a.name.localeCompare(b.name)))
+const saldoDe = (c: typeof accounts.value[number]) => esDeuda(c) ? `debes $${dinero(deudaDe(c))}` : `$${dinero(Number(c.balance))}`
 const cuentaElegida = computed(() => accounts.value.find(c => c.id === cuenta.value))
 
 /** Cómo queda el presupuesto de la categoría elegida si guardas */
@@ -84,6 +91,7 @@ const guardar = async () => {
   error.value = ''
   if (!user.value || !hoja.value) return
   if (!monto.value || monto.value <= 0) { error.value = 'Pon un monto mayor a 0'; return }
+  if (tipo.value === 'transfer') return guardarTransferencia()
   if (tipo.value === 'expense' && !categoria.value) { error.value = 'Elige en qué gastaste'; return }
   if (cuenta.value === undefined) { error.value = tipo.value === 'income' ? 'Elige a qué cuenta entró' : 'Elige de qué cuenta salió'; return }
   const metodo = metodoOriginal.value === 'apple_pay' ? 'apple_pay'
@@ -96,6 +104,7 @@ const guardar = async () => {
     category: tipo.value === 'income' ? (categoria.value || 'Otros') : categoria.value,
     date: fecha.value,
     account_id: cuenta.value ?? null,
+    to_account_id: null,
     is_shared: esCompartido.value,
     payment_method: metodo,
   }
@@ -109,6 +118,35 @@ const guardar = async () => {
       if (modo.value === 'clasificar') siguienteDeCola()
       else cerrarHoja()
     }
+  } catch (e: any) {
+    error.value = 'No se pudo guardar: ' + (e.message ?? e)
+  } finally {
+    guardando.value = false
+  }
+}
+
+const guardarTransferencia = async () => {
+  if (!user.value || !monto.value) return
+  if (!cuenta.value) { error.value = 'Elige desde qué cuenta sale'; return }
+  if (!hacia.value) { error.value = 'Elige a qué cuenta va'; return }
+  if (cuenta.value === hacia.value) { error.value = 'Elige dos cuentas distintas'; return }
+  const destino = accounts.value.find(c => c.id === hacia.value)
+  const datos = {
+    type: 'transfer',
+    description: descripcion.value.trim() || (destino ? (esDeuda(destino) ? `Pago ${destino.name}` : `A ${destino.name}`) : 'Transferencia'),
+    amount: monto.value,
+    category: 'Transferencia',
+    date: fecha.value,
+    account_id: cuenta.value,
+    to_account_id: hacia.value,
+    is_shared: false,
+    payment_method: 'transfer',
+  }
+  guardando.value = true
+  try {
+    if (modo.value === 'nuevo') await addExpense(user.value.id, datos)
+    else if (mov.value) await updateExpense(mov.value.id, { ...datos, needs_review: false })
+    cerrarHoja()
   } catch (e: any) {
     error.value = 'No se pudo guardar: ' + (e.message ?? e)
   } finally {
@@ -145,6 +183,7 @@ const borrar = async () => {
         <div class="seg">
           <button type="button" :class="{ on: tipo === 'expense' }" @click="tipo = 'expense'">Gasto</button>
           <button type="button" :class="{ on: tipo === 'income' }" @click="tipo = 'income'">Ingreso</button>
+          <button type="button" :class="{ on: tipo === 'transfer' }" @click="tipo = 'transfer'">Transferir</button>
         </div>
         <label class="campo monto">
           Monto
@@ -152,7 +191,7 @@ const borrar = async () => {
         </label>
       </template>
 
-      <div>
+      <div v-if="tipo !== 'transfer'">
         <p class="subtitulo" style="margin-bottom: 10px">{{ tipo === 'income' ? '¿De qué es?' : modo === 'clasificar' ? 'Categoría' : '¿En qué?' }}</p>
         <div class="chips">
           <button v-for="c in CATEGORIAS" :key="c.nombre" type="button" class="chip"
@@ -165,7 +204,7 @@ const borrar = async () => {
 
       <label class="campo">
         Detalle (opcional)
-        <input v-model="descripcion" type="text" :placeholder="mov?.description || 'Ej: almuerzo con el equipo'" />
+        <input v-model="descripcion" type="text" :placeholder="mov?.description || (tipo === 'transfer' ? 'Ej: ahorro del mes, pago de la tarjeta' : 'Ej: almuerzo con el equipo')" />
       </label>
 
       <div>
@@ -182,23 +221,38 @@ const borrar = async () => {
       </div>
 
       <div>
-        <p class="subtitulo" style="margin-bottom: 10px">{{ tipo === 'income' ? '¿A qué cuenta entró?' : '¿De qué cuenta salió?' }}</p>
+        <p class="subtitulo" style="margin-bottom: 10px">{{ tipo === 'transfer' ? '¿Desde qué cuenta?' : tipo === 'income' ? '¿A qué cuenta entró?' : '¿De qué cuenta salió?' }}</p>
         <div class="cuentas">
           <button v-for="c in misCuentas" :key="c.id" type="button" class="cuenta-op" :class="{ on: cuenta === c.id }" @click="cuenta = c.id">
-            <span class="tipo" :class="c.tipo">{{ c.tipo === 'credito' ? 'Crédito' : 'Débito' }}</span>
+            <span class="tipo" :class="infoSubtipo(c.subtipo).grupo">{{ infoSubtipo(c.subtipo).corto }}</span>
             <strong>{{ c.name }}</strong>
-            <span class="saldo">{{ c.tipo === 'credito' ? `debes $${dinero(Math.max(0, -Number(c.balance)))}` : `$${dinero(Number(c.balance))}` }}</span>
+            <span class="saldo">{{ saldoDe(c) }}</span>
           </button>
-          <button type="button" class="cuenta-op" :class="{ on: cuenta === null }" @click="cuenta = null">
+          <button v-if="tipo !== 'transfer'" type="button" class="cuenta-op" :class="{ on: cuenta === null }" @click="cuenta = null">
             <span class="tipo">Efectivo</span>
             <strong>Efectivo / ninguna</strong>
             <span class="saldo">no descuenta saldo</span>
           </button>
         </div>
-        <p v-if="!misCuentas.length" class="muted" style="margin: 8px 0 0">Agrega tus cuentas en Ajustes para elegir de cuál salió.</p>
+        <p v-if="!misCuentas.length" class="muted" style="margin: 8px 0 0">Agrega tus cuentas en Ajustes → Mis cuentas para elegir de cuál salió.</p>
       </div>
 
-      <label v-if="tienePareja" class="interruptor">
+      <template v-if="tipo === 'transfer'">
+        <span class="flecha-transfer" aria-hidden="true"><Icono nombre="transferencia" :tam="22" /></span>
+        <div>
+          <p class="subtitulo" style="margin-bottom: 10px">¿Hacia qué cuenta?</p>
+          <div class="cuentas">
+            <button v-for="c in misCuentas" :key="c.id" type="button" class="cuenta-op" :class="{ on: hacia === c.id }"
+              :disabled="c.id === cuenta" @click="hacia = c.id">
+              <span class="tipo" :class="infoSubtipo(c.subtipo).grupo">{{ infoSubtipo(c.subtipo).corto }}</span>
+              <strong>{{ c.name }}</strong>
+              <span class="saldo">{{ esDeuda(c) ? 'baja lo que debes' : saldoDe(c) }}</span>
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <label v-if="tienePareja && tipo !== 'transfer'" class="interruptor">
         <input v-model="esCompartido" type="checkbox" />
         <span class="pista" aria-hidden="true"></span>
         <span><strong>Compartido con mi pareja</strong><br><span class="muted">Cuenta en el presupuesto de los dos</span></span>
@@ -246,9 +300,12 @@ const borrar = async () => {
 .cuenta-op strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; max-width: 100%; white-space: nowrap; }
 .cuenta-op .saldo { font-size: 12px; color: var(--gris); }
 .cuenta-op.on { background: var(--tinta); color: #fff; }
+.cuenta-op:disabled { opacity: 0.35; cursor: not-allowed; }
 .cuenta-op.on .saldo { color: #ddd; }
 .tipo { font-size: 10px; font-weight: 800; text-transform: uppercase; border: 1.5px solid currentColor; border-radius: 6px; padding: 1px 5px; background: var(--neutro); color: var(--tinta); }
-.tipo.debito { background: var(--menta); }
-.tipo.credito { background: var(--durazno); }
+.tipo.disponible { background: var(--cielo); }
+.tipo.ahorro { background: var(--lima); }
+.tipo.deuda { background: var(--durazno); }
+.flecha-transfer { display: flex; justify-content: center; color: var(--gris); margin: -4px 0; }
 .impacto { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
 </style>

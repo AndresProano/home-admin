@@ -5,6 +5,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useFinances, type Expense } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
 import { colorDe } from '@/lib/categorias'
+import { infoSubtipo } from '@/lib/cuentas'
 import { aISO, hoy, ayer, fechaLarga, dinero } from '@/lib/fechas'
 
 const { user } = useAuth()
@@ -48,10 +49,12 @@ const grupos = computed(() => {
 
 const nombreCuenta = (id: string | null) => {
   const a = id ? accounts.value.find(x => x.id === id) : undefined
-  return a ? `${a.name} (${a.tipo === 'credito' ? 'crédito' : 'débito'})` : ''
+  return a ? `${a.name} (${infoSubtipo(a.subtipo).corto.toLowerCase()})` : ''
 }
 const METODOS: Record<string, string> = { cash: 'Efectivo', apple_pay: 'Apple Pay', bank_transfer: 'Transferencia' }
-const detalle = (e: Expense) => [
+const esTransfer = (e: Expense) => e.type === 'transfer'
+const soloNombre = (id: string | null | undefined) => (id ? accounts.value.find(a => a.id === id)?.name : '') ?? '?'
+const detalle = (e: Expense) => esTransfer(e) ? `Transferencia · ${soloNombre(e.account_id)} → ${soloNombre(e.to_account_id)}` : [
   e.needs_review ? 'Toca para clasificar' : e.category,
   METODOS[e.payment_method ?? ''] ?? '',
   nombreCuenta(e.account_id),
@@ -101,11 +104,11 @@ const detalle = (e: Expense) => [
     <section v-for="g in grupos" :key="g.fecha">
       <h2 class="fecha-grupo">{{ g.etiqueta }}</h2>
       <button v-for="e in g.items" :key="e.id" class="mov" @click="abrirMovimiento(e)">
-        <span class="icono-cat" :style="{ background: e.type === 'income' ? 'var(--menta)' : colorDe(e.needs_review ? 'Sin clasificar' : e.category) }">
-          <Icono :nombre="e.type === 'income' ? 'ingreso' : e.needs_review ? 'Sin clasificar' : e.category" :tam="18" />
+        <span class="icono-cat" :style="{ background: esTransfer(e) ? 'var(--neutro)' : e.type === 'income' ? 'var(--menta)' : colorDe(e.needs_review ? 'Sin clasificar' : e.category) }">
+          <Icono :nombre="esTransfer(e) ? 'transferencia' : e.type === 'income' ? 'ingreso' : e.needs_review ? 'Sin clasificar' : e.category" :tam="18" />
         </span>
         <span class="mov-info"><strong>{{ e.description }}</strong><span>{{ detalle(e) }}</span></span>
-        <span class="mov-monto" :class="{ ingreso: e.type === 'income' }">{{ e.type === 'income' ? '+' : '−' }}${{ dinero(Number(e.amount)) }}</span>
+        <span class="mov-monto" :class="{ ingreso: e.type === 'income' }">{{ esTransfer(e) ? '' : e.type === 'income' ? '+' : '−' }}${{ dinero(Number(e.amount)) }}</span>
       </button>
     </section>
   </main>
