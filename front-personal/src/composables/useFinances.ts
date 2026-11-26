@@ -192,7 +192,7 @@ export function useFinances() {
   const addExpense = async (userId: string, expense: NewExpense) => {
     const { data, error } = await supabase
       .from('expenses')
-      .insert({ ...expense, owner_id: userId, needs_review: false })
+      .insert({ ...expense, owner_id: userId, needs_review: (expense as { needs_review?: boolean }).needs_review ?? false })
       .select()
       .single()
 
