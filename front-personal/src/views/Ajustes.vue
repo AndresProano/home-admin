@@ -23,13 +23,19 @@ const formCuenta = ref(false)
 const cuentaNombre = ref('')
 const cuentaSaldo = ref<number | null>(null)
 const cuentaCompartida = ref(false)
+const cuentaTipo = ref<'debito' | 'credito'>('debito')
 const misCuentas = computed(() => accounts.value.filter(a => !a.is_shared))
 const compartidas = computed(() => accounts.value.filter(a => a.is_shared))
 const agregarCuenta = async () => {
   if (!cuentaNombre.value.trim() || !user.value) return
-  await addAccount(user.value.id, cuentaNombre.value.trim(), Number(cuentaSaldo.value || 0), cuentaCompartida.value)
-  cuentaNombre.value = ''; cuentaSaldo.value = null; cuentaCompartida.value = false; formCuenta.value = false
+  // crédito: lo que debes se guarda como saldo negativo
+  const monto = Number(cuentaSaldo.value || 0)
+  const saldo = cuentaTipo.value === 'credito' ? -Math.abs(monto) : monto
+  await addAccount(user.value.id, cuentaNombre.value.trim(), saldo, cuentaCompartida.value, cuentaTipo.value)
+  cuentaNombre.value = ''; cuentaSaldo.value = null; cuentaCompartida.value = false; cuentaTipo.value = 'debito'; formCuenta.value = false
 }
+const totalDebito = computed(() => accounts.value.filter(a => a.tipo !== 'credito').reduce((s, a) => s + Number(a.balance), 0))
+const totalDeuda = computed(() => -accounts.value.filter(a => a.tipo === 'credito').reduce((s, a) => s + Number(a.balance), 0))
 const borrarCuenta = async (id: string, nombre: string) => {
   if (confirm(`¿Borrar la cuenta "${nombre}"? Los movimientos se quedan, solo pierden la cuenta.`)) await removeAccount(id)
 }
@@ -55,7 +61,8 @@ const desvincular = async () => {
 /* Atajo */
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
-const urlAtajo = `${supabaseUrl}/rest/v1/rpc/add_expense_via_api_key`
+const urlAtajo = `${supabaseUrl}/rest/v1/rpc/registrar_gasto_atajo`
+const urlInstalar = `${import.meta.env.BASE_URL}atajo/Registrar%20gasto.shortcut`
 const urlApp = `${window.location.origin}${import.meta.env.BASE_URL}finances?clasificar=1`
 const menu = [...CATEGORIAS.map(c => c.nombre), 'Después'].join(', ')
 const copiado = ref('')
@@ -85,17 +92,30 @@ const salir = async () => {
         <button class="btn-icono amarillo" aria-label="Agregar cuenta" @click="formCuenta = !formCuenta"><Icono nombre="mas" :grosor="2.6" /></button>
       </div>
       <form v-if="formCuenta" class="form" @submit.prevent="agregarCuenta">
-        <label class="campo">Nombre<input v-model="cuentaNombre" type="text" placeholder="Ej: Pichincha" required /></label>
-        <label class="campo">Saldo de hoy ($)<input v-model.number="cuentaSaldo" type="number" step="0.01" inputmode="decimal" placeholder="0,00" /></label>
+        <div class="seg">
+          <button type="button" :class="{ on: cuentaTipo === 'debito' }" @click="cuentaTipo = 'debito'">Débito / banco</button>
+          <button type="button" :class="{ on: cuentaTipo === 'credito' }" @click="cuentaTipo = 'credito'">Tarjeta de crédito</button>
+        </div>
+        <label class="campo">Nombre<input v-model="cuentaNombre" type="text" :placeholder="cuentaTipo === 'credito' ? 'Ej: Visa Produbanco' : 'Ej: Pichincha, Efectivo'" required /></label>
+        <label class="campo">{{ cuentaTipo === 'credito' ? '¿Cuánto debes hoy en esta tarjeta? ($)' : 'Saldo de hoy ($)' }}
+          <input v-model.number="cuentaSaldo" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00" />
+          <span class="muted" style="font-weight: 500">{{ cuentaTipo === 'credito' ? 'Cada gasto con esta tarjeta suma a lo que debes.' : 'Cada gasto de esta cuenta baja el saldo.' }}</span>
+        </label>
         <label v-if="tienePareja" class="check"><input v-model="cuentaCompartida" type="checkbox" /> Es una cuenta compartida con mi pareja</label>
         <button class="btn primario" type="submit">Agregar cuenta</button>
       </form>
+      <div v-if="accounts.length" class="totales-cuentas">
+        <span>Tienes <strong class="cifra">${{ dinero(totalDebito) }}</strong></span>
+        <span v-if="totalDeuda > 0">Debes <strong class="cifra rojo">${{ dinero(totalDeuda) }}</strong></span>
+      </div>
       <div v-for="a in [...misCuentas, ...compartidas]" :key="a.id" class="fila-item">
+        <span class="etiqueta-tipo" :class="a.tipo">{{ a.tipo === 'credito' ? 'Crédito' : 'Débito' }}</span>
         <span class="mov-info"><strong>{{ a.name }}</strong><span>{{ a.is_shared ? `Compartida${esMio(a.owner_id) ? '' : ' · ' + nombreDe(a.owner_id)}` : 'Personal' }}</span></span>
-        <span class="cifra" :class="{ rojo: Number(a.balance) < 0 }">${{ dinero(Number(a.balance)) }}</span>
+        <span v-if="a.tipo === 'credito'" class="cifra rojo" style="text-align: right">Debes ${{ dinero(Math.max(0, -Number(a.balance))) }}</span>
+        <span v-else class="cifra" :class="{ rojo: Number(a.balance) < 0 }">${{ dinero(Number(a.balance)) }}</span>
         <button v-if="esMio(a.owner_id)" class="btn-icono" :aria-label="`Borrar ${a.name}`" @click="borrarCuenta(a.id, a.name)"><Icono nombre="cerrar" :tam="18" /></button>
       </div>
-      <p v-if="!accounts.length" class="muted" style="margin: 0">Agrega tus cuentas con el saldo de hoy; los gastos que les asignes se descuentan solos.</p>
+      <p v-if="!accounts.length" class="muted" style="margin: 0">Agrega tus cuentas (Pichincha, Produbanco, Efectivo…) y tus tarjetas de crédito. Cuando registres un gasto eliges de cuál salió.</p>
     </section>
 
     <!-- Pareja -->
@@ -138,21 +158,41 @@ const salir = async () => {
           <span class="muted" style="color: var(--tinta)">Tu API key (no la compartas)</span>
           <button class="btn" @click="copiar(apiKey, 'clave')"><code>{{ apiKey.slice(0, 8) }}…{{ apiKey.slice(-4) }}</code> {{ copiado === 'clave' ? 'Copiada' : 'Copiar' }}</button>
         </div>
-        <ol class="pasos">
-          <li>App <b>Atajos</b> → <b>Automatización</b> → <b>+</b> → <b>Transacción</b>. Elige tus tarjetas y marca <b>Ejecutar inmediatamente</b>.</li>
-          <li><b>Elegir del menú</b> con el texto “¿En qué gastaste?” y estas opciones: <code>{{ menu }}</code>. En cada opción pon un <b>Texto</b> con el mismo nombre (en “Después”, vacío).</li>
-          <li><b>Obtener contenido de URL</b> → método <b>POST</b>.
-            <button class="btn mini" @click="copiar(urlAtajo, 'url')">{{ copiado === 'url' ? 'URL copiada' : 'Copiar URL' }}</button>
-            Encabezados: <code>apikey</code>
-            <button class="btn mini" @click="copiar(supabaseAnonKey, 'anon')">{{ copiado === 'anon' ? 'Copiado' : 'Copiar valor' }}</button>
-            y <code>Content-Type</code> = <code>application/json</code>.
-            Cuerpo JSON: <code>p_api_key</code> (tu API key), <code>p_amount</code> = <b>Importe</b>, <code>p_merchant</code> = <b>Comercio</b>,
-            <code>p_category</code> = <b>Elemento elegido</b>, y opcionales <code>p_account_name</code> (nombre exacto de tu cuenta) y <code>p_compartido</code> (Sí para gastos de pareja).</li>
-          <li><b>Obtener valor del diccionario</b>: clave <code>mensaje</code>.</li>
-          <li><b>Mostrar notificación</b> con ese valor: “$12,50 en Comida. Te quedan $87,50 de $100 este mes.”</li>
+        <ol class="pasos grandes">
+          <li>
+            <strong>Copia tu clave</strong> (ya la tienes arriba).
+            <button class="btn negro" style="margin-top: 6px" @click="copiar(apiKey, 'clave')">{{ copiado === 'clave' ? '¡Clave copiada!' : 'Copiar mi clave' }}</button>
+          </li>
+          <li>
+            <strong>Instala el atajo</strong> desde el iPhone. Cuando lo pida, pega tu clave. Cada vez que pagues te mostrará el monto y te preguntará <b>de qué cuenta salió</b> (tu lista de arriba) y <b>en qué gastaste</b>.
+            <a class="btn primario" style="margin-top: 6px" :href="urlInstalar">Instalar “Registrar gasto”</a>
+          </li>
+          <li>
+            <strong>Crea la automatización</strong> (Apple no deja compartirla, son 3 toques):
+            <ol class="sub">
+              <li>App <b>Atajos</b> → <b>Automatización</b> → <b>+</b> → <b>Transacción</b> → elige tus tarjetas → <b>Ejecutar inmediatamente</b>.</li>
+              <li>Agrega <b>Texto</b> y escribe dentro: <b>Importe</b> | <b>Comercio</b> (las dos son variables del pago, separadas por la barra <code>|</code>).</li>
+              <li>Agrega <b>Ejecutar atajo</b> → <b>Registrar gasto</b>. Listo.</li>
+            </ol>
+          </li>
         </ol>
-        <p style="margin: 0; font-size: 14px">Si eliges “Después”, el gasto queda por clasificar. Para que el atajo abra la app ahí, agrega <b>Abrir URL</b>:
-          <button class="btn mini" @click="copiar(urlApp, 'app')">{{ copiado === 'app' ? 'Copiado' : 'Copiar enlace' }}</button></p>
+        <p style="margin: 0; font-size: 14px">Si eliges “Elegir después”, el gasto queda por clasificar y la app te pregunta la cuenta y la categoría.</p>
+        <p style="margin: 0; font-size: 14px">Bonus: si pagas en efectivo, ejecuta “Registrar gasto” a mano (o desde un widget) y escribe algo como <i>12,50 almuerzo</i>.</p>
+
+        <details class="manual">
+          <summary>Configurarlo a mano (avanzado)</summary>
+          <ol class="pasos">
+            <li><b>Elegir del menú</b> con: <code>{{ menu }}</code>.</li>
+            <li><b>Obtener contenido de URL</b> → POST
+              <button class="btn mini" @click="copiar(urlAtajo, 'url')">{{ copiado === 'url' ? 'URL copiada' : 'Copiar URL' }}</button>
+              con encabezado <code>apikey</code>
+              <button class="btn mini" @click="copiar(supabaseAnonKey, 'anon')">{{ copiado === 'anon' ? 'Copiado' : 'Copiar valor' }}</button>
+              y JSON: <code>p_api_key</code>, <code>p_texto</code> (Importe | Comercio), <code>p_category</code>, opcional <code>p_account_name</code> y <code>p_compartido</code>.</li>
+            <li><b>Obtener valor del diccionario</b> <code>mensaje</code> → <b>Mostrar notificación</b>.</li>
+          </ol>
+          <p style="margin: 0; font-size: 14px">Para que el atajo abra la app en “por clasificar”: <b>Abrir URL</b>
+            <button class="btn mini" @click="copiar(urlApp, 'app')">{{ copiado === 'app' ? 'Copiado' : 'Copiar enlace' }}</button></p>
+        </details>
       </template>
       <button v-else class="btn primario" @click="generarClave">Generar mi API key</button>
     </section>
@@ -171,11 +211,20 @@ const salir = async () => {
 .form { display: flex; flex-direction: column; gap: 10px; }
 .check { display: flex; gap: 10px; align-items: center; font-size: 14px; font-weight: 600; }
 .check input { width: 22px; height: 22px; accent-color: var(--azul); }
+.totales-cuentas { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; border-top: var(--borde); padding-top: 10px; }
+.totales-cuentas .cifra { font-size: 18px; }
+.etiqueta-tipo { font-size: 11px; font-weight: 800; border: var(--borde); border-radius: 8px; padding: 3px 6px; text-transform: uppercase; background: var(--menta); }
+.etiqueta-tipo.credito { background: var(--durazno); }
 .fila-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: var(--borde); }
 .codigo { justify-content: space-between; }
 .clave { display: flex; flex-direction: column; gap: 6px; }
 .clave .btn { justify-content: space-between; background: #fff; }
 .pasos { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 1.45; }
 code { font-size: 12px; background: rgba(255, 255, 255, 0.7); border: 1.5px solid var(--tinta); border-radius: 6px; padding: 1px 5px; word-break: break-word; }
+.grandes > li { margin-bottom: 6px; }
+.grandes .btn { width: 100%; }
+.sub { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.manual summary { font-weight: 700; cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.manual { border-top: var(--borde); padding-top: 6px; }
 .mini { min-height: 34px; padding: 0 10px; font-size: 12px; margin: 4px 0; background: #fff; }
 </style>

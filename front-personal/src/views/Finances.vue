@@ -35,7 +35,9 @@ const inicioMes = computed(() => { const d = new Date(); return aISO(new Date(d.
 const delMes = computed(() => expenses.value.filter(e => enLista(e) && e.date >= inicioMes.value))
 const gastadoMes = computed(() => delMes.value.filter(e => (e.type || 'expense') === 'expense').reduce((s, e) => s + Number(e.amount), 0))
 const ingresoMes = computed(() => delMes.value.filter(e => e.type === 'income').reduce((s, e) => s + Number(e.amount), 0))
-const saldo = computed(() => accounts.value.filter(a => a.is_shared === compartido.value).reduce((s, a) => s + Number(a.balance), 0))
+const cuentasLista = computed(() => accounts.value.filter(a => a.is_shared === compartido.value))
+const saldo = computed(() => cuentasLista.value.filter(a => a.tipo !== 'credito').reduce((s, a) => s + Number(a.balance), 0))
+const deuda = computed(() => -cuentasLista.value.filter(a => a.tipo === 'credito').reduce((s, a) => s + Number(a.balance), 0))
 
 /* Presupuestos visibles */
 const misPresupuestos = computed(() => budgets.value.filter(b =>
@@ -125,7 +127,8 @@ const interpretar = (texto: string) => {
         <div class="pastillas">
           <span class="pastilla blanca">{{ heroe.restante >= 0 ? `$${dinero(heroe.porDia)} por día` : '¡Se acabó el presupuesto!' }}</span>
           <span class="pastilla">de ${{ dinero(heroe.de) }}</span>
-          <span class="pastilla">En cuentas ${{ dinero(saldo) }}</span>
+          <span class="pastilla">Tienes ${{ dinero(saldo) }}</span>
+          <span v-if="deuda > 0" class="pastilla">Debes ${{ dinero(deuda) }} en tarjetas</span>
         </div>
       </template>
       <template v-else>
@@ -133,7 +136,8 @@ const interpretar = (texto: string) => {
         <span class="cifra grande">${{ dinero(gastadoMes) }}</span>
         <div class="pastillas">
           <span class="pastilla blanca">Entró ${{ dinero(ingresoMes) }}</span>
-          <span class="pastilla">En cuentas ${{ dinero(saldo) }}</span>
+          <span class="pastilla">Tienes ${{ dinero(saldo) }}</span>
+          <span v-if="deuda > 0" class="pastilla">Debes ${{ dinero(deuda) }} en tarjetas</span>
         </div>
       </template>
     </section>
@@ -142,7 +146,7 @@ const interpretar = (texto: string) => {
     <button v-if="pendingReview.length" class="bloque amarillo pendientes" @click="abrirClasificar">
       <span class="cifra" style="font-size: 30px">{{ pendingReview.length }}</span>
       <span class="pend-texto">
-        <strong>{{ pendingReview.length === 1 ? 'gasto sin categoría' : 'gastos sin categoría' }}</strong>
+        <strong>{{ pendingReview.length === 1 ? 'gasto por clasificar' : 'gastos por clasificar' }}</strong>
         <span>{{ pendingReview.slice(0, 3).map(e => e.description).join(' · ') }}</span>
       </span>
       <span class="btn negro" style="min-height: 38px; padding: 0 12px; font-size: 13px">Clasificar</span>
