@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import Icono from '@/components/Icono.vue'
+import Avatar from '@/components/Avatar.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useFinances } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
@@ -14,7 +15,7 @@ const router = useRouter()
 const { user, signOut } = useAuth()
 const { accounts, expenses, importarMovimientos, addAccount, partner, apiKey, createPartnerInvite, joinPartner, removePartner,
   generateApiKey, getDisplayName } = useFinances()
-const { cargar, olvidarCarga, parejaId, esMio } = useApp()
+const { cargar, olvidarCarga, parejaId, esMio, fotoDe } = useApp()
 
 onMounted(() => cargar())
 
@@ -281,7 +282,10 @@ const salir = async () => {
     <!-- Sesión -->
     <section class="bloque seccion">
       <h2 class="subtitulo" style="margin: 0">Tu cuenta</h2>
-      <p style="margin: 0">{{ nombre }}<br><span class="muted">{{ user?.email }}</span></p>
+      <div style="display: flex; align-items: center; gap: 12px">
+        <Avatar :foto="user ? fotoDe(user.id) : null" :nombre="nombre" :tam="56" />
+        <p style="margin: 0">{{ nombre }}<br><span class="muted">{{ user?.email }}</span></p>
+      </div>
       <button class="btn" @click="salir"><Icono nombre="salir" :tam="18" /> Cerrar sesión</button>
     </section>
   </main>

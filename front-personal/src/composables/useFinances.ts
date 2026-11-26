@@ -69,6 +69,8 @@ interface Profile {
   display_name: string | null
   email: string | null
   avatar_url: string | null
+  /** lo que cobra el banco por transferir a otro banco (Ecuador: ~$0,40) */
+  comision_interbancaria?: number | null
 }
 
 const accounts = ref<BankAccount[]>([])
@@ -281,6 +283,20 @@ export function useFinances() {
     if (data) profilesCache.value[userId] = data
   }
 
+  /** Comisión por transferencia interbancaria del usuario (por defecto $0,40) */
+  const comisionDe = (userId: string) => Number(profilesCache.value[userId]?.comision_interbancaria ?? 0.4)
+
+  const guardarComision = async (userId: string, valor: number) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ comision_interbancaria: valor })
+      .eq('id', userId)
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    profilesCache.value = { ...profilesCache.value, [userId]: data }
+  }
+
   const getDisplayName = (userId: string) => {
     return profilesCache.value[userId]?.display_name || 'Desconocido'
   }
@@ -330,6 +346,8 @@ export function useFinances() {
     generateApiKey,
     loadProfile,
     getDisplayName,
+    comisionDe,
+    guardarComision,
     profilesCache,
   }
 }

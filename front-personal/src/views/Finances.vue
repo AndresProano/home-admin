@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import Icono from '@/components/Icono.vue'
+import Avatar from '@/components/Avatar.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useFinances, type Expense } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
@@ -13,7 +14,7 @@ const router = useRouter()
 const route = useRoute()
 const { user } = useAuth()
 const { accounts, expenses, budgets, pendingReview, getDisplayName } = useFinances()
-const { lista, compartido, tienePareja, cargar, abrirClasificar, abrirNuevo, abrirMovimiento, nombreDe } = useApp()
+const { lista, compartido, tienePareja, cargar, abrirClasificar, abrirNuevo, abrirMovimiento, nombreDe, fotoDe } = useApp()
 
 const cargando = ref(true)
 onMounted(async () => {
@@ -27,7 +28,7 @@ onMounted(async () => {
 })
 
 const nombre = computed(() => user.value ? getDisplayName(user.value.id).split(' ')[0] : '')
-const inicial = computed(() => (nombre.value || '?').charAt(0).toUpperCase())
+const foto = computed(() => user.value ? fotoDe(user.value.id) : null)
 
 /* Lo de la lista activa (mío / compartido) */
 const enLista = (e: { is_shared: boolean }) => e.is_shared === compartido.value
@@ -112,7 +113,7 @@ const interpretar = (texto: string) => {
       </div>
       <div style="display: flex; gap: 8px">
         <button class="btn-icono" :class="{ amarillo: escuchando }" aria-label="Dictar un gasto" @click="dictar"><Icono nombre="mic" /></button>
-        <RouterLink to="/ajustes" class="btn-icono avatar" aria-label="Ajustes">{{ inicial }}</RouterLink>
+        <RouterLink to="/ajustes" class="enlace-avatar" aria-label="Ajustes"><Avatar :foto="foto" :nombre="nombre" /></RouterLink>
       </div>
     </header>
 
@@ -192,7 +193,7 @@ const interpretar = (texto: string) => {
 </template>
 
 <style scoped>
-.avatar { font-family: var(--titulo); font-weight: 700; font-size: 18px; text-decoration: none; border-radius: 50%; }
+.enlace-avatar { display: inline-flex; text-decoration: none; border-radius: 50%; }
 .heroe { display: flex; flex-direction: column; gap: 10px; padding: 18px; }
 .etiqueta { font-size: 14px; font-weight: 600; }
 .grande { font-size: 46px; line-height: 1; letter-spacing: -1.5px; }

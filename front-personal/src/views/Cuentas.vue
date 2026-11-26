@@ -11,7 +11,7 @@ import {
 } from '@/lib/cuentas'
 
 const { user } = useAuth()
-const { accounts, addAccount, updateAccount, removeAccount } = useFinances()
+const { accounts, addAccount, updateAccount, removeAccount, comisionDe, guardarComision } = useFinances()
 const { cargar, tienePareja, esMio, nombreDe, abrirNuevo } = useApp()
 
 onMounted(() => cargar())
@@ -98,6 +98,18 @@ const borrar = async () => {
   form.value.abierto = false
 }
 
+/* ---------- comisión interbancaria ---------- */
+const editandoComision = ref(false)
+const comisionTexto = ref<number | null>(null)
+const comision = computed(() => user.value ? comisionDe(user.value.id) : 0.4)
+const abrirComision = () => { comisionTexto.value = comision.value; editandoComision.value = true }
+const guardarLaComision = async () => {
+  if (!user.value) return
+  const v = Math.max(0, Number(comisionTexto.value || 0))
+  try { await guardarComision(user.value.id, v); editandoComision.value = false }
+  catch (e: any) { alert('No se pudo guardar: ' + (e.message ?? e)) }
+}
+
 /* ---------- transferencias ---------- */
 const transferir = (hacia?: BankAccount) => {
   const origen = mias.value.find(c => infoSubtipo(c.subtipo).grupo === 'disponible' && c.id !== hacia?.id)
@@ -182,6 +194,18 @@ const textoVence = (c: BankAccount) => {
           <span class="cifra saldo">{{ saldoTexto(c) }}</span>
         </span>
       </div>
+    </section>
+
+    <section v-if="mias.length" class="bloque comision-ajuste">
+      <span class="mov-info">
+        <strong>Comisión por transferencia a otro banco</strong>
+        <span>Se propone al transferir entre bancos distintos y la puedes quitar en cada transferencia.</span>
+      </span>
+      <form v-if="editandoComision" class="fila" style="align-items: flex-end" @submit.prevent="guardarLaComision">
+        <label class="campo">Monto ($)<input v-model.number="comisionTexto" type="number" step="0.01" min="0" max="50" inputmode="decimal" /></label>
+        <button class="btn primario" type="submit" style="flex: 0 0 auto">Guardar</button>
+      </form>
+      <button v-else class="btn" @click="abrirComision">${{ dinero(comision) }} · cambiar</button>
     </section>
 
     <div v-if="!mias.length" class="bloque punteado vacio">
@@ -284,6 +308,7 @@ const textoVence = (c: BankAccount) => {
 .tipo-op span:last-child { font-size: 12px; color: var(--gris); }
 .tipo-op.on { background: var(--tinta); color: #fff; }
 .tipo-op.on span:last-child { color: #ddd; }
+.comision-ajuste { display: flex; flex-direction: column; gap: 10px; }
 .check { display: flex; gap: 10px; align-items: center; font-size: 14px; font-weight: 600; }
 .check input { width: 22px; height: 22px; accent-color: var(--azul); }
 </style>

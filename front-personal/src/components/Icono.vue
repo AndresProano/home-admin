@@ -40,6 +40,7 @@ const ICONOS: Record<string, string[]> = {
   tarjeta: ['M2 5h20v14H2z', 'M2 10h20'],
   transferencia: ['M17 3l4 4-4 4', 'M21 7H7', 'M7 21l-4-4 4-4', 'M3 17h14'],
   editar: ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'],
+  comisiones: ['M19 5L5 19', 'M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z', 'M17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z'],
 }
 
 const props = withDefaults(defineProps<{ nombre: string; tam?: number; grosor?: number }>(), { tam: 20, grosor: 2 })
