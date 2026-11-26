@@ -587,7 +587,7 @@ const getPaymentMethodLabel = (method: string | undefined) => {
 <style scoped>
 .finances-page {
   padding: 20px 16px;
-  padding-bottom: 100px;
+  padding-bottom: calc(100px + env(safe-area-inset-bottom));
   min-height: 100vh;
 }
 
@@ -869,6 +869,7 @@ const getPaymentMethodLabel = (method: string | undefined) => {
   padding: 16px 20px;
   background: linear-gradient(180deg, transparent 0%, #0f0f1a 30%);
   padding-top: 32px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 .toolbar-left {
   display: flex;
@@ -964,7 +965,7 @@ const getPaymentMethodLabel = (method: string | undefined) => {
   max-width: 380px;
   background: #12121f;
   height: 100%;
-  padding: 24px;
+  padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
   overflow-y: auto;
   animation: slideIn 0.25s ease;
 }

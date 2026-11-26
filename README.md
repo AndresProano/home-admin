@@ -10,6 +10,7 @@ Web app to organize a shared home: a kitchen inventory shared by the members of 
 - iPhone Shortcut on every Apple Pay payment: asks the category, logs the expense and notifies how much budget is left; skipped ones land in a "to classify" inbox the app asks about.
 - Account balances are kept by a database trigger, so the app and the Shortcut never overwrite each other.
 - Access control in PostgreSQL with Row Level Security: 6 tables, 23 policies and helper SQL functions (household membership, partner visibility).
+- Installable PWA: on iPhone open it in Safari → Share → Add to Home Screen; it opens full screen with its own icon.
 - Automatic deploy: every push to `main` builds the app and publishes it to GitHub Pages with GitHub Actions.
 
 ## Stack

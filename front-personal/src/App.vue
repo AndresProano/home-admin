@@ -22,5 +22,11 @@ body {
   max-width: 520px;
   margin: 0 auto;
   min-height: 100vh;
+  /* en modo app (ícono en la pantalla de inicio) el contenido va bajo el notch */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
+html { -webkit-text-size-adjust: 100%; }
+body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
 </style>
