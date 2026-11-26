@@ -3,7 +3,7 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 
 const router = useRouter()
-const { user, signOut } = useAuth()
+const { signOut } = useAuth()
 
 const handleSignOut = async () => {
   await signOut()
@@ -15,15 +15,20 @@ const handleSignOut = async () => {
   <div class="home-page">
     <div class="menu-container">
       <div class="top-bar">
-        <h1>Home</h1>
-        <button class="signout-btn" @click="handleSignOut">Sign out</button>
+        <h1>Inicio</h1>
+        <button class="signout-btn" @click="handleSignOut">Salir</button>
       </div>
 
       <div class="grid-menu">
         <router-link to="/finances" class="menu-card finances">
           <div class="card-icon">&#128176;</div>
-          <h2>Finances</h2>
-          <p>Track your budget</p>
+          <h2>Finanzas</h2>
+          <p>Gastos, ingresos y cuentas</p>
+        </router-link>
+        <router-link to="/presupuestos" class="menu-card budgets">
+          <div class="card-icon">&#127919;</div>
+          <h2>Presupuestos</h2>
+          <p>Mensuales y anuales</p>
         </router-link>
       </div>
     </div>
@@ -75,5 +80,8 @@ const handleSignOut = async () => {
 .menu-card p { margin: 0; font-size: 0.85rem; opacity: 0.85; }
 .finances {
   background: linear-gradient(135deg, #3a0ca3, #6c63ff);
+}
+.budgets {
+  background: linear-gradient(135deg, #0f766e, #4ecdc4);
 }
 </style>

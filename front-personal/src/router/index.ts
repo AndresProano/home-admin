@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { supabase } from '@/lib/supabaseClient'
 import Home from '../views/Home.vue'
 import Finances from '../views/Finances.vue'
+import Budgets from '../views/Budgets.vue'
 import login from '../views/loginView.vue'
 
 const router = createRouter({
@@ -18,10 +19,16 @@ const router = createRouter({
       component: Home,
       meta: { requiresAuth: true },
     },
-{
+    {
       path: '/finances',
       name: 'Finances',
       component: Finances,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/presupuestos',
+      name: 'Presupuestos',
+      component: Budgets,
       meta: { requiresAuth: true },
     },
   ],
@@ -35,6 +42,7 @@ router.beforeEach(async (to) => {
       return { name: 'login' }
     }
   }
+  return true
 })
 
 export default router

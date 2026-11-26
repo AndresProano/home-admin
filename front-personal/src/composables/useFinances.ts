@@ -21,6 +21,21 @@ export interface Expense {
   created_at: string
   payment_method?: string
   type?: string
+  needs_review?: boolean
+}
+
+export interface Budget {
+  id: string
+  owner_id: string
+  is_shared: boolean
+  category: string
+  period: 'mensual' | 'anual'
+  amount: number
+}
+
+export type NewExpense = {
+  description: string; amount: number; category: string; date: string
+  account_id: string | null; is_shared: boolean; payment_method?: string; type?: string
 }
 
 export interface FinancePartner {
@@ -40,28 +55,12 @@ interface Profile {
 
 const accounts = ref<BankAccount[]>([])
 const expenses = ref<Expense[]>([])
+const budgets = ref<Budget[]>([])
 const partner = ref<FinancePartner | null>(null)
 const apiKey = ref<string | null>(null)
 const profilesCache = ref<Record<string, Profile>>({})
 
 export function useFinances() {
-  // --- Balances ---
-  const personalBalance = computed(() =>
-    accounts.value
-      .filter(a => !a.is_shared)
-      .reduce((sum, a) => sum + Number(a.balance), 0)
-  )
-
-  const sharedBalance = computed(() =>
-    accounts.value
-      .filter(a => a.is_shared)
-      .reduce((sum, a) => sum + Number(a.balance), 0)
-  )
-
-  const totalBalance = computed(() =>
-    accounts.value.reduce((sum, a) => sum + Number(a.balance), 0)
-  )
-
   // --- Partner ---
   const loadPartner = async (userId: string) => {
     const { data } = await supabase
@@ -87,27 +86,10 @@ export function useFinances() {
     return data
   }
 
-  const joinPartner = async (inviteCode: string, userId: string) => {
-    // Find the pending invite
-    const { data: invite, error: findErr } = await supabase
-      .from('finance_partners')
-      .select('*')
-      .eq('invite_code', inviteCode.trim().toLowerCase())
-      .eq('status', 'pending')
-      .single()
-
-    if (findErr || !invite) throw new Error('Invite not found or already used.')
-    if (invite.user_a === userId) throw new Error('You cannot join your own invite.')
-
-    // Accept it
-    const { data, error } = await supabase
-      .from('finance_partners')
-      .update({ user_b: userId, status: 'active' })
-      .eq('id', invite.id)
-      .select()
-      .single()
-
-    if (error) throw error
+  const joinPartner = async (inviteCode: string) => {
+    // La función join_partner valida el código en el servidor (nadie puede listar invitaciones ajenas)
+    const { data, error } = await supabase.rpc('join_partner', { p_code: inviteCode.trim() })
+    if (error) throw new Error(error.message)
     partner.value = data
     return data
   }
@@ -167,32 +149,34 @@ export function useFinances() {
     expenses.value = data ?? []
   }
 
-  const addExpense = async (
-    userId: string,
-    expense: { description: string; amount: number; category: string; date: string; account_id: string | null; is_shared: boolean; payment_method?: string; type?: string }
-  ) => {
+  // El saldo de la cuenta lo ajusta un trigger en la base de datos
+  // (aplicar_movimiento_a_saldo), así que solo recargamos las cuentas.
+  const addExpense = async (userId: string, expense: NewExpense) => {
     const { data, error } = await supabase
       .from('expenses')
-      .insert({ ...expense, owner_id: userId })
+      .insert({ ...expense, owner_id: userId, needs_review: false })
       .select()
       .single()
 
     if (error) throw error
     expenses.value.unshift(data)
+    if (expense.account_id) await loadAccounts()
+    return data
+  }
 
-    // Subtract from account balance if linked
-    if (expense.account_id) {
-      const account = accounts.value.find(a => a.id === expense.account_id)
-      if (account) {
-        const newBalance = Number(account.balance) + (expense.type === 'income' ? expense.amount : -expense.amount)
-        await supabase
-          .from('bank_accounts')
-          .update({ balance: newBalance })
-          .eq('id', expense.account_id)
-        account.balance = newBalance
-      }
-    }
+  const updateExpense = async (expenseId: string, changes: Partial<NewExpense> & { needs_review?: boolean }) => {
+    const { data, error } = await supabase
+      .from('expenses')
+      .update(changes)
+      .eq('id', expenseId)
+      .select()
+      .single()
 
+    if (error) throw error
+    const i = expenses.value.findIndex(e => e.id === expenseId)
+    if (i >= 0) expenses.value[i] = data
+    expenses.value.sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at))
+    await loadAccounts()
     return data
   }
 
@@ -204,21 +188,36 @@ export function useFinances() {
       .eq('id', expenseId)
 
     if (error) throw error
-
-    // Refund the account if linked
-    if (expense?.account_id) {
-      const account = accounts.value.find(a => a.id === expense.account_id)
-      if (account) {
-        const newBalance = Number(account.balance) + ((expense.type || 'expense') === 'income' ? -expense.amount : expense.amount)
-        await supabase
-          .from('bank_accounts')
-          .update({ balance: newBalance })
-          .eq('id', expense.account_id)
-        account.balance = newBalance
-      }
-    }
-
     expenses.value = expenses.value.filter(e => e.id !== expenseId)
+    if (expense?.account_id) await loadAccounts()
+  }
+
+  const pendingReview = computed(() => expenses.value.filter(e => e.needs_review))
+
+  // --- Presupuestos ---
+  const loadBudgets = async () => {
+    const { data } = await supabase.from('budgets').select('*').order('category')
+    budgets.value = (data ?? []).map(b => ({ ...b, amount: Number(b.amount) }))
+  }
+
+  /** Crea o reemplaza el presupuesto de esa categoría y periodo */
+  const saveBudget = async (userId: string, b: Omit<Budget, 'id' | 'owner_id'>) => {
+    const { data, error } = await supabase
+      .from('budgets')
+      .upsert({ ...b, owner_id: userId }, { onConflict: 'owner_id,is_shared,category,period' })
+      .select()
+      .single()
+    if (error) throw error
+    const saved = { ...data, amount: Number(data.amount) }
+    budgets.value = [...budgets.value.filter(x => x.id !== saved.id), saved]
+      .sort((a, b) => a.category.localeCompare(b.category))
+    return saved
+  }
+
+  const removeBudget = async (budgetId: string) => {
+    const { error } = await supabase.from('budgets').delete().eq('id', budgetId)
+    if (error) throw error
+    budgets.value = budgets.value.filter(b => b.id !== budgetId)
   }
 
   // --- Profiles ---
@@ -233,7 +232,7 @@ export function useFinances() {
   }
 
   const getDisplayName = (userId: string) => {
-    return profilesCache.value[userId]?.display_name || 'Unknown'
+    return profilesCache.value[userId]?.display_name || 'Desconocido'
   }
 
   // --- API Key (for iOS Shortcuts) ---
@@ -262,9 +261,8 @@ export function useFinances() {
     expenses,
     partner,
     apiKey,
-    personalBalance,
-    sharedBalance,
-    totalBalance,
+    budgets,
+    pendingReview,
     loadPartner,
     createPartnerInvite,
     joinPartner,
@@ -274,7 +272,11 @@ export function useFinances() {
     removeAccount,
     loadExpenses,
     addExpense,
+    updateExpense,
     removeExpense,
+    loadBudgets,
+    saveBudget,
+    removeBudget,
     loadApiKey,
     generateApiKey,
     loadProfile,
