@@ -7,12 +7,12 @@ Uso:
   shortcuts sign --mode anyone --input salida-sin-firmar.shortcut --output "public/atajo/Registrar gasto.shortcut"
 
 Qué hace el atajo:
-  1. Recibe el texto del pago (de la automatización "Transacción": "[Importe] [Comercio]").
+  1. Recibe el texto del pago (de la automatización "Transacción": "[Importe] | [Comercio] | [Tarjeta]").
      Si lo ejecutas a mano, te pide el texto (ej: "12,50 almuerzo").
   2. Pregunta "¿En qué gastaste?" con las categorías de la app (+ "Después").
   3. Llama a registrar_gasto_atajo en Supabase con tu clave.
   4. Muestra la notificación con el mensaje de vuelta ("Te quedan $X de $Y").
-Al instalarlo pide (preguntas de importación): tu clave del atajo y el nombre de tu cuenta.
+Al instalarlo pide (pregunta de importación) solo tu clave del atajo. La cuenta sale de la tarjeta con la que pagaste.
 """
 import plistlib
 import sys
@@ -65,22 +65,19 @@ def accion(ident, params):
 
 
 def main(url, anon, salida_archivo):
-    t_clave, t_cuenta, t_lista, t_elegir, t_url, t_valor = (u() for _ in range(6))
+    t_clave, t_lista, t_elegir, t_url, t_valor = (u() for _ in range(5))
     acciones = [
         # 0-1: clave (pregunta de importación)
         accion('is.workflow.actions.gettext', {'UUID': t_clave, 'WFTextActionText': ''}),
         accion('is.workflow.actions.setvariable', {'WFVariableName': 'clave', 'WFInput': adjunto(salida(t_clave, 'Text'))}),
-        # 2-3: cuenta (pregunta de importación, puede quedar vacía)
-        accion('is.workflow.actions.gettext', {'UUID': t_cuenta, 'WFTextActionText': ''}),
-        accion('is.workflow.actions.setvariable', {'WFVariableName': 'cuenta', 'WFInput': adjunto(salida(t_cuenta, 'Text'))}),
-        # 4-5: ¿En qué gastaste?
+        # 2-3: ¿En qué gastaste?
         accion('is.workflow.actions.list', {'UUID': t_lista, 'WFItems': CATEGORIAS}),
         accion('is.workflow.actions.choosefromlist', {
             'UUID': t_elegir,
             'WFInput': adjunto(salida(t_lista, 'List')),
             'WFChooseFromListActionPrompt': '¿En qué gastaste?',
         }),
-        # 6: enviar a Supabase
+        # 4: enviar a Supabase (la cuenta sale de la tarjeta, del lado del servidor)
         accion('is.workflow.actions.downloadurl', {
             'UUID': t_url,
             'WFURL': f'{url.rstrip("/")}/rest/v1/rpc/registrar_gasto_atajo',
@@ -92,10 +89,9 @@ def main(url, anon, salida_archivo):
                 ('p_api_key', texto(variable('clave'))),
                 ('p_texto', texto({'Type': 'ExtensionInput'})),
                 ('p_category', texto(salida(t_elegir, 'Chosen Item'))),
-                ('p_account_name', texto(variable('cuenta'))),
             ]),
         }),
-        # 7-8: mensaje de vuelta → notificación
+        # 5-6: mensaje de vuelta → notificación
         accion('is.workflow.actions.getvalueforkey', {
             'UUID': t_valor,
             'WFInput': adjunto(salida(t_url, 'Contents of URL')),
@@ -128,8 +124,6 @@ def main(url, anon, salida_archivo):
         'WFWorkflowImportQuestions': [
             {'ActionIndex': 0, 'Category': 'Parameter', 'ParameterKey': 'WFTextActionText', 'DefaultValue': '',
              'Text': 'Pega tu clave del atajo (en la app: Ajustes → Atajo de iPhone → Copiar mi clave)'},
-            {'ActionIndex': 2, 'Category': 'Parameter', 'ParameterKey': 'WFTextActionText', 'DefaultValue': '',
-             'Text': 'Nombre exacto de tu cuenta para descontar el saldo (ej: Pichincha). Déjalo vacío si no quieres descontar.'},
         ],
         'WFWorkflowActions': acciones,
     }

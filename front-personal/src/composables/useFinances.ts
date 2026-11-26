@@ -7,6 +7,8 @@ export interface BankAccount {
   is_shared: boolean
   name: string
   balance: number
+  /** cómo se llama su tarjeta en Wallet (para que el atajo sepa de qué cuenta descontar) */
+  tarjeta?: string | null
 }
 
 export interface Expense {
@@ -118,15 +120,28 @@ export function useFinances() {
     accounts.value = data ?? []
   }
 
-  const addAccount = async (userId: string, name: string, balance: number, isShared: boolean) => {
+  const addAccount = async (userId: string, name: string, balance: number, isShared: boolean, tarjeta: string | null = null) => {
     const { data, error } = await supabase
       .from('bank_accounts')
-      .insert({ owner_id: userId, name, balance, is_shared: isShared })
+      .insert({ owner_id: userId, name, balance, is_shared: isShared, tarjeta: tarjeta?.trim() || null })
       .select()
       .single()
 
     if (error) throw error
     accounts.value.push(data)
+    return data
+  }
+
+  const updateAccount = async (accountId: string, changes: Partial<Pick<BankAccount, 'name' | 'tarjeta'>>) => {
+    const { data, error } = await supabase
+      .from('bank_accounts')
+      .update(changes)
+      .eq('id', accountId)
+      .select()
+      .single()
+    if (error) throw error
+    const i = accounts.value.findIndex(a => a.id === accountId)
+    if (i >= 0) accounts.value[i] = data
     return data
   }
 
@@ -283,6 +298,7 @@ export function useFinances() {
     removePartner,
     loadAccounts,
     addAccount,
+    updateAccount,
     removeAccount,
     loadExpenses,
     addExpense,

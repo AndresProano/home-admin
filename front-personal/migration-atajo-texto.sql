@@ -37,6 +37,32 @@ returns text as $$
            '\s+', ' ', 'g')), '');
 $$ language sql immutable;
 
+-- Cada cuenta puede tener el nombre de su tarjeta en Wallet (ej: "Visa Pichincha")
+alter table bank_accounts add column if not exists tarjeta text;
+
+-- Cuenta del usuario que corresponde a una tarjeta de Wallet:
+-- 1) su "tarjeta" aparece en el nombre de la tarjeta, o 2) el nombre de la cuenta aparece en él.
+create or replace function cuenta_de_tarjeta(p_user uuid, p_tarjeta text)
+returns uuid as $$
+  select id from bank_accounts
+  where owner_id = p_user and nullif(trim(p_tarjeta), '') is not null
+    and (
+      (nullif(trim(tarjeta), '') is not null and position(lower(trim(tarjeta)) in lower(p_tarjeta)) > 0)
+      or position(lower(trim(name)) in lower(p_tarjeta)) > 0
+    )
+  order by (nullif(trim(tarjeta), '') is not null) desc, length(coalesce(tarjeta, name)) desc
+  limit 1;
+$$ language sql stable security definer set search_path = public;
+revoke execute on function cuenta_de_tarjeta(uuid, text) from public, anon, authenticated;
+
+drop function if exists registrar_gasto_atajo(text, text, text, text, boolean);
+
+/*
+  p_texto: lo que manda la automatización. Formatos:
+    "Importe | Comercio | Tarjeta"  (recomendado: la cuenta sale de la tarjeta)
+    "$12,50 Starbucks"              (texto libre, ej. cuando lo ejecutas a mano)
+  p_account_name: opcional, fuerza una cuenta por nombre.
+*/
 create or replace function registrar_gasto_atajo(
   p_api_key text,
   p_texto text,
@@ -46,21 +72,48 @@ create or replace function registrar_gasto_atajo(
 )
 returns json as $$
 declare
-  v_monto numeric := monto_de_texto(p_texto);
+  v_partes text[] := string_to_array(coalesce(p_texto, ''), '|');
+  v_monto numeric;
+  v_comercio text;
+  v_tarjeta text;
+  v_user uuid;
+  v_cuenta text := nullif(trim(p_account_name), '');
+  v_res jsonb;
 begin
+  if array_length(v_partes, 1) >= 2 then
+    v_monto := monto_de_texto(v_partes[1]);
+    v_comercio := nullif(trim(v_partes[2]), '');
+    v_tarjeta := nullif(trim(v_partes[3]), '');
+  else
+    v_monto := monto_de_texto(p_texto);
+    v_comercio := comercio_de_texto(p_texto);
+  end if;
+
   if v_monto is null or v_monto <= 0 then
     return json_build_object('error', 'Monto no encontrado',
       'mensaje', format('No encontré el monto en "%s". Ábrelo en la app y regístralo con +.', left(coalesce(p_texto, ''), 60)));
   end if;
-  return add_expense_via_api_key(
-    p_api_key,
-    v_monto,
-    coalesce(comercio_de_texto(p_texto), 'Apple Pay'),
-    nullif(trim(p_account_name), ''),
-    nullif(nullif(trim(p_category), ''), 'Después'),
-    null,
-    null,
-    coalesce(p_compartido, false));
+
+  -- cuenta a partir de la tarjeta con la que pagaste
+  if v_cuenta is null and v_tarjeta is not null then
+    select user_id into v_user from user_api_keys where api_key = p_api_key;
+    if v_user is not null then
+      select name into v_cuenta from bank_accounts where id = cuenta_de_tarjeta(v_user, v_tarjeta);
+    end if;
+  end if;
+
+  v_res := add_expense_via_api_key(
+    p_api_key, v_monto, coalesce(v_comercio, 'Apple Pay'), v_cuenta,
+    nullif(nullif(trim(p_category), ''), 'Después'), null, null, coalesce(p_compartido, false))::jsonb;
+
+  if v_res ? 'error' then return v_res::json; end if;
+
+  v_res := v_res || jsonb_build_object('cuenta', v_cuenta, 'tarjeta', v_tarjeta);
+  if v_cuenta is null and v_tarjeta is not null then
+    v_res := v_res || jsonb_build_object('mensaje',
+      (v_res->>'mensaje') || format(' No sé de qué cuenta es "%s": elígela en la app.', v_tarjeta));
+  end if;
+  return v_res::json;
 end;
 $$ language plpgsql security definer set search_path = public;
 
