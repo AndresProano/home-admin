@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import Icono from '@/components/Icono.vue'
 import Avatar from '@/components/Avatar.vue'
+import EscuchaVoz from '@/components/EscuchaVoz.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useFinances, type Expense } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
@@ -80,20 +81,59 @@ const detalle = (e: Expense) => esTransfer(e) ? `${etiquetaFecha(e.date)} · ${n
 ].filter(Boolean).join(' · ')
 
 /* ---------- Dictar: "gasté 12,50 en almuerzo con la visa" → se guarda solo ---------- */
-const escuchando = ref(false)
+type EstadoVoz = 'escuchando' | 'procesando' | 'sin-voz'
+const estadoVoz = ref<EstadoVoz | null>(null)
+const textoVoz = ref('')
+const mensajeVoz = ref('')
+const escuchando = computed(() => estadoVoz.value === 'escuchando')
+let reconocedor: any = null
+let textoFinal = ''
+let cancelado = false
+
 const dictar = () => {
   const w = window as any
   const SR = w.SpeechRecognition || w.webkitSpeechRecognition
-  if (!SR) { alert('Este navegador no permite dictar. Usa el micrófono del teclado del iPhone en el botón +.'); return }
+  if (!SR) { alert('Este navegador no permite dictar. Ábrela en Safari, o usa el micrófono del teclado del iPhone en el botón +.'); return }
   const r = new SR()
   r.lang = 'es-EC'
-  r.interimResults = false
-  escuchando.value = true
-  r.onresult = (ev: any) => { escuchando.value = false; guardarDictado(ev.results[0][0].transcript) }
-  r.onerror = () => { escuchando.value = false }
-  r.onend = () => { escuchando.value = false }
+  r.interimResults = true          // muestra lo que vas diciendo
+  r.continuous = false
+  textoFinal = ''
+  cancelado = false
+  textoVoz.value = ''
+  mensajeVoz.value = ''
+  estadoVoz.value = 'escuchando'
+  r.onresult = (ev: any) => {
+    let parcial = ''
+    for (let i = ev.resultIndex ?? 0; i < ev.results.length; i++) {
+      const t = ev.results[i][0].transcript
+      if (ev.results[i].isFinal) textoFinal += t
+      else parcial += t
+    }
+    textoVoz.value = `${textoFinal} ${parcial}`.trim()
+  }
+  r.onerror = (ev: any) => {
+    if (ev?.error === 'not-allowed' || ev?.error === 'service-not-allowed') mensajeVoz.value = 'No tengo permiso para el micrófono'
+  }
+  r.onend = async () => {
+    reconocedor = null
+    if (cancelado) return
+    const texto = (textoFinal || textoVoz.value).trim()
+    if (!texto) { estadoVoz.value = 'sin-voz'; return }
+    textoVoz.value = texto
+    estadoVoz.value = 'procesando'
+    await guardarDictado(texto)
+    estadoVoz.value = null
+  }
+  reconocedor = r
   r.start()
 }
+/** "Listo": se pasa a "Guardando…" de una, mientras el teléfono termina de procesar */
+const terminarVoz = () => {
+  if (textoVoz.value) estadoVoz.value = 'procesando'
+  reconocedor?.stop()
+}
+const cancelarVoz = () => { cancelado = true; estadoVoz.value = null; reconocedor?.abort() }
 
 interface AvisoVoz { oido: string; mov: Expense; iva: Expense | null; resumen: string; falta: string }
 const aviso = ref<AvisoVoz | null>(null)
@@ -256,6 +296,9 @@ const deshacerDictado = async () => {
         <span class="mov-monto" :class="{ ingreso: e.type === 'income' }">{{ esTransfer(e) ? '' : e.type === 'income' ? '+' : '−' }}${{ dinero(Number(e.amount)) }}</span>
       </button>
     </div>
+    <EscuchaVoz v-if="estadoVoz" :estado="estadoVoz" :texto="textoVoz" :mensaje="mensajeVoz"
+      @listo="terminarVoz" @cancelar="cancelarVoz" @reintentar="dictar" />
+
     <!-- Aviso de lo que se guardó por voz -->
     <div v-if="aviso" class="aviso-voz bloque sombra" role="status" aria-live="polite">
       <span class="muted oido">“{{ aviso.oido }}”</span>
