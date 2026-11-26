@@ -56,6 +56,7 @@ const esTransfer = (e: Expense) => e.type === 'transfer'
 const soloNombre = (id: string | null | undefined) => (id ? accounts.value.find(a => a.id === id)?.name : '') ?? '?'
 const detalle = (e: Expense) => esTransfer(e) ? `Transferencia · ${soloNombre(e.account_id)} → ${soloNombre(e.to_account_id)}` : [
   e.needs_review ? 'Toca para clasificar' : e.category,
+  e.exterior ? 'Exterior' : '',
   METODOS[e.payment_method ?? ''] ?? '',
   nombreCuenta(e.account_id),
   compartido.value && e.owner_id !== user.value?.id ? nombreDe(e.owner_id) : '',

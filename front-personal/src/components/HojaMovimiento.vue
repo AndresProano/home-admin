@@ -8,6 +8,7 @@ import { CATEGORIAS, SIN_CLASIFICAR, colorDe } from '@/lib/categorias'
 import { hoy, ayer, fechaLarga, dinero } from '@/lib/fechas'
 import { estadoPresupuesto, presupuestoDeGasto } from '@/lib/presupuesto'
 import { infoSubtipo, esDeuda, deudaDe } from '@/lib/cuentas'
+import { CATEGORIA_DIGITAL, ISD_EXENTO_ANUAL } from '@/lib/impuestos'
 
 /**
  * Hoja global para tres usos:
@@ -16,13 +17,16 @@ import { infoSubtipo, esDeuda, deudaDe } from '@/lib/cuentas'
  *  - 'nuevo': registrar a mano (botón + de la barra)
  */
 const { user } = useAuth()
-const { accounts, budgets, expenses, addExpense, updateExpense, removeExpense, comisionDe } = useFinances()
+const { accounts, budgets, expenses, addExpense, updateExpense, removeExpense, comisionDe, ivaDigitalDe } = useFinances()
 const { hoja, compartido, tienePareja, colaClasificar, siguienteDeCola, saltar, cerrarHoja } = useApp()
 
 const tipo = ref<'expense' | 'income' | 'transfer'>('expense')
 /** transferencias: cuenta de destino */
 const hacia = ref<string | undefined>(undefined)
 /** comisión interbancaria (solo al crear una transferencia) */
+/** servicio digital / compra del exterior: cuenta para el ISD y puede llevar IVA aparte */
+const exterior = ref(false)
+const agregarIva = ref(false)
 const cobrarComision = ref(false)
 const montoComision = ref<number | null>(null)
 const descripcion = ref('')
@@ -48,6 +52,8 @@ const cargar = () => {
   hacia.value = m?.to_account_id ?? p.to_account_id ?? undefined
   cobrarComision.value = false
   montoComision.value = null
+  exterior.value = m?.exterior ?? (categoria.value === CATEGORIA_DIGITAL)
+  agregarIva.value = modo.value !== 'editar' && exterior.value
   descripcion.value = m && !m.needs_review ? m.description : (p.description ?? '')
   monto.value = m ? Number(m.amount) : (p.amount ?? null)
   categoria.value = m && m.category !== SIN_CLASIFICAR ? m.category : (p.category ?? '')
@@ -86,6 +92,17 @@ const impacto = computed(() => {
   return { sinPresupuesto: false as const, est }
 })
 
+/* Suscripciones → servicio digital del exterior (se puede apagar) */
+watch(categoria, (c, antes) => {
+  if (modo.value === 'editar' || c === antes) return
+  exterior.value = c === CATEGORIA_DIGITAL
+  agregarIva.value = exterior.value
+})
+watch(exterior, v => { if (!v) agregarIva.value = false })
+const pctIva = computed(() => user.value ? ivaDigitalDe(user.value.id) : 15)
+const montoIva = computed(() => Math.round(Number(monto.value || 0) * pctIva.value) / 100)
+const fmtPct = (n: number) => n.toLocaleString('es-EC')
+
 const elegirFecha = (f: 'hoy' | 'ayer' | 'otra') => {
   if (f === 'hoy') { fecha.value = hoy(); otraFecha.value = false }
   else if (f === 'ayer') { fecha.value = ayer(); otraFecha.value = false }
@@ -112,14 +129,20 @@ const guardar = async () => {
     to_account_id: null,
     is_shared: esCompartido.value,
     payment_method: metodo,
+    exterior: tipo.value === 'expense' && exterior.value,
   }
+  // IVA de servicio digital: gasto aparte en la misma categoría y cuenta (no se marca como exterior)
+  const ivaExtra = tipo.value === 'expense' && exterior.value && agregarIva.value && modo.value !== 'editar' ? montoIva.value : 0
+  const lineaIva = ivaExtra > 0 ? { ...datos, description: `IVA ${datos.description}`.slice(0, 200), amount: ivaExtra, exterior: false } : null
   guardando.value = true
   try {
     if (modo.value === 'nuevo') {
       await addExpense(user.value.id, datos)
+      if (lineaIva) await addExpense(user.value.id, lineaIva)
       cerrarHoja()
     } else if (mov.value) {
       await updateExpense(mov.value.id, { ...datos, needs_review: false })
+      if (lineaIva) await addExpense(user.value.id, lineaIva)
       if (modo.value === 'clasificar') siguienteDeCola()
       else cerrarHoja()
     }
@@ -305,6 +328,19 @@ const borrar = async () => {
         </div>
       </template>
 
+      <div v-if="tipo === 'expense'" class="bloque exterior" :class="{ activa: exterior }">
+        <label class="interruptor">
+          <input v-model="exterior" type="checkbox" />
+          <span class="pista" aria-hidden="true"></span>
+          <span><strong>Servicio digital / del exterior</strong><br>
+            <span class="muted">Netflix, Spotify, Apple, compras en el exterior. Cuenta para el límite del ISD (${{ dinero(ISD_EXENTO_ANUAL) }} al año).</span></span>
+        </label>
+        <label v-if="exterior && modo !== 'editar'" class="check-iva">
+          <input v-model="agregarIva" type="checkbox" />
+          <span>Agregar el IVA {{ fmtPct(pctIva) }}% que cobra el banco aparte<template v-if="monto"> (<strong>${{ dinero(montoIva) }}</strong>)</template></span>
+        </label>
+      </div>
+
       <label v-if="tienePareja && tipo !== 'transfer'" class="interruptor">
         <input v-model="esCompartido" type="checkbox" />
         <span class="pista" aria-hidden="true"></span>
@@ -359,6 +395,10 @@ const borrar = async () => {
 .tipo.disponible { background: var(--cielo); }
 .tipo.ahorro { background: var(--lima); }
 .tipo.deuda { background: var(--durazno); }
+.exterior { display: flex; flex-direction: column; gap: 10px; }
+.exterior.activa { background: var(--cielo); }
+.check-iva { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+.check-iva input { width: 22px; height: 22px; flex: 0 0 auto; accent-color: var(--azul); }
 .comision { display: flex; flex-direction: column; gap: 10px; }
 .comision.activa { background: var(--neutro); }
 .flecha-transfer { display: flex; justify-content: center; color: var(--gris); margin: -4px 0; }
