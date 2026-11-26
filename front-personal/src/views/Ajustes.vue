@@ -12,7 +12,7 @@ import { CATEGORIAS } from '@/lib/categorias'
 
 const router = useRouter()
 const { user, signOut } = useAuth()
-const { accounts, expenses, importarMovimientos, partner, apiKey, createPartnerInvite, joinPartner, removePartner,
+const { accounts, expenses, importarMovimientos, addAccount, partner, apiKey, createPartnerInvite, joinPartner, removePartner,
   generateApiKey, getDisplayName } = useFinances()
 const { cargar, olvidarCarga, parejaId, esMio } = useApp()
 
@@ -91,17 +91,31 @@ const elegirArchivo = async (ev: Event) => {
   lectura.value = null
   try {
     lectura.value = await (await import('@/lib/excel')).leerArchivo(archivo, accounts.value, user.value.id)
-    if (!lectura.value.filas.length) avisar('No encontré movimientos para importar en ese archivo.', true)
+    if (!lectura.value.filas.length && !lectura.value.cuentas.length) avisar('No encontré cuentas ni movimientos nuevos para importar en ese archivo.', true)
   } catch (e: any) {
     avisar(e.message ?? 'No se pudo leer el archivo', true)
   } finally { ocupado.value = false }
 }
 const importar = async () => {
-  if (!lectura.value) return
+  if (!lectura.value || !user.value) return
   ocupado.value = true
   try {
-    const n = await importarMovimientos(lectura.value.filas, afectarSaldos.value)
-    avisar(`¡Listo! Se importaron ${n} movimientos.${afectarSaldos.value ? ' Los saldos de tus cuentas se actualizaron.' : ''}`)
+    // 1) cuentas nuevas primero, para que los movimientos puedan usarlas
+    const ids: Record<string, string> = {}
+    for (const c of lectura.value.cuentas) {
+      const creada = await addAccount(user.value.id, c)
+      ids[c.name] = creada.id
+    }
+    // 2) movimientos (los que apuntan a una cuenta nueva toman su id)
+    const filas = lectura.value.filas.map(({ cuenta_nueva, ...f }) => ({
+      ...f, account_id: cuenta_nueva ? ids[cuenta_nueva] ?? null : f.account_id,
+    }))
+    const n = filas.length ? await importarMovimientos(filas, afectarSaldos.value) : 0
+    const partes = [
+      lectura.value.cuentas.length ? `${lectura.value.cuentas.length} cuenta${lectura.value.cuentas.length > 1 ? 's' : ''}` : '',
+      n ? `${n} movimiento${n > 1 ? 's' : ''}` : '',
+    ].filter(Boolean).join(' y ')
+    avisar(`¡Listo! Se importaron ${partes}.${n && afectarSaldos.value ? ' Los saldos de tus cuentas se actualizaron.' : ''}`)
     lectura.value = null
     afectarSaldos.value = false
   } catch (e: any) {
@@ -222,10 +236,10 @@ const salir = async () => {
     <!-- Importar / exportar -->
     <section class="bloque seccion" style="background: var(--lima)">
       <h2 class="subtitulo" style="margin: 0">Importar desde Excel</h2>
-      <p style="margin: 0">¿Llevabas tus gastos en otra app o en una hoja? Pásalos a la plantilla y súbela.</p>
+      <p style="margin: 0">¿Llevabas tus cuentas y gastos en otra app o en una hoja? Pásalos a la plantilla y súbela. Todo es opcional.</p>
       <ol class="pasos">
         <li><button class="btn" style="background: #fff; width: 100%" :disabled="ocupado" @click="bajarPlantilla">Descargar plantilla de Excel</button></li>
-        <li>Llénala (fecha, descripción, monto, tipo, categoría, cuenta). La hoja “Instrucciones” trae tus categorías y cuentas.</li>
+        <li>Llena la hoja <b>Cuentas</b> (tus bancos, cuenta meta, pólizas, tarjetas…) y/o la hoja <b>Movimientos</b>. Deja vacío lo que no tengas. La hoja “Instrucciones” explica cada columna.</li>
         <li>
           <label class="btn primario subir">
             {{ ocupado ? 'Leyendo…' : 'Subir mi Excel' }}
@@ -235,7 +249,11 @@ const salir = async () => {
       </ol>
 
       <div v-if="lectura" class="bloque" style="background: #fff; display: flex; flex-direction: column; gap: 10px">
-        <strong>{{ lectura.filas.length }} movimientos listos para importar</strong>
+        <strong v-if="lectura.cuentas.length">{{ lectura.cuentas.length }} cuenta{{ lectura.cuentas.length > 1 ? 's' : '' }} nueva{{ lectura.cuentas.length > 1 ? 's' : '' }}</strong>
+        <ul v-if="lectura.cuentas.length" class="lista-avisos" style="margin-top: -4px">
+          <li v-for="c in lectura.cuentas" :key="c.name">{{ c.name }} · {{ c.subtipo === 'credito' ? `debes $${dinero(-Number(c.balance))}` : `$${dinero(Number(c.balance ?? 0))}` }}<template v-if="c.tasa_anual"> · {{ Number(c.tasa_anual).toLocaleString('es-EC') }}% anual</template></li>
+        </ul>
+        <strong v-if="lectura.filas.length">{{ lectura.filas.length }} movimientos listos para importar</strong>
         <span v-if="lectura.desde" class="muted" style="color: var(--tinta)">Del {{ fechaLarga(lectura.desde) }} al {{ fechaLarga(lectura.hasta!) }} · gastos ${{ dinero(lectura.gastos) }} · ingresos ${{ dinero(lectura.ingresos) }}</span>
         <details v-if="lectura.avisos.length">
           <summary class="resumen-lista">{{ lectura.avisos.length }} con ajustes</summary>
@@ -245,19 +263,19 @@ const salir = async () => {
           <summary class="resumen-lista rojo">{{ lectura.omitidas.length }} filas que no se pueden importar</summary>
           <ul class="lista-avisos"><li v-for="o in lectura.omitidas.slice(0, 30)" :key="o">{{ o }}</li></ul>
         </details>
-        <label class="check">
+        <label v-if="lectura.filas.length" class="check">
           <input v-model="afectarSaldos" type="checkbox" />
           <span>Sumar y restar estos movimientos en el saldo de mis cuentas<br>
             <span class="muted" style="font-weight: 500">Déjalo apagado si es historial viejo y tus cuentas ya tienen el saldo de hoy.</span></span>
         </label>
         <div class="acciones">
           <button class="btn" @click="lectura = null">Cancelar</button>
-          <button class="btn primario" :disabled="ocupado || !lectura.filas.length" @click="importar">Importar {{ lectura.filas.length }}</button>
+          <button class="btn primario" :disabled="ocupado || (!lectura.filas.length && !lectura.cuentas.length)" @click="importar">Importar</button>
         </div>
       </div>
       <p v-if="mensajeExcel" class="bloque" style="margin: 0; background: #fff" :class="{ rojo: errorExcel }">{{ mensajeExcel }}</p>
 
-      <button class="btn" style="background: #fff" :disabled="ocupado || !expenses.length" @click="bajarMovimientos">Descargar mis movimientos (Excel)</button>
+      <button class="btn" style="background: #fff" :disabled="ocupado || (!expenses.length && !accounts.length)" @click="bajarMovimientos">Descargar mis cuentas y movimientos (Excel)</button>
     </section>
 
     <!-- Sesión -->

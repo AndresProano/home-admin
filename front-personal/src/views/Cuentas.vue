@@ -229,8 +229,8 @@ const textoVence = (c: BankAccount) => {
 
         <div v-if="conTasa" class="fila">
           <label class="campo">
-            Tasa anual (%)
-            <input v-model.number="form.tasa" type="number" step="0.01" min="0" max="100" inputmode="decimal" placeholder="Ej: 6,5" />
+            Tasa anual % (si tiene)
+            <input v-model.number="form.tasa" type="number" step="0.01" min="0" max="100" inputmode="decimal" placeholder="Vacío si no paga intereses" />
           </label>
           <label v-if="form.subtipo === 'inversion'" class="campo">
             Vence el
