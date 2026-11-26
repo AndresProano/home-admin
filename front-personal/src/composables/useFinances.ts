@@ -210,6 +210,14 @@ export function useFinances() {
     if (expense?.account_id) await loadAccounts()
   }
 
+  /** Importa movimientos (Excel). Con afectarSaldos=false no se tocan los saldos de las cuentas. */
+  const importarMovimientos = async (filas: unknown[], afectarSaldos: boolean) => {
+    const { data, error } = await supabase.rpc('importar_movimientos', { p_filas: filas, p_afectar_saldos: afectarSaldos })
+    if (error) throw new Error(error.message)
+    await Promise.all([loadExpenses(), loadAccounts()])
+    return data as number
+  }
+
   const pendingReview = computed(() => expenses.value.filter(e => e.needs_review))
 
   // --- Presupuestos ---
@@ -302,6 +310,7 @@ export function useFinances() {
     updateExpense,
     removeExpense,
     loadBudgets,
+    importarMovimientos,
     saveBudget,
     removeBudget,
     loadApiKey,
