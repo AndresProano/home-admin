@@ -36,6 +36,8 @@ export interface Expense {
   type?: string
   needs_review?: boolean
   to_account_id?: string | null
+  /** consumo en el exterior (cuenta para el límite del ISD) */
+  exterior?: boolean
 }
 
 export interface Budget {
@@ -54,6 +56,7 @@ export type NewExpense = {
   description: string; amount: number; category: string; date: string
   account_id: string | null; is_shared: boolean; payment_method?: string; type?: string
   to_account_id?: string | null
+  exterior?: boolean
 }
 
 export interface FinancePartner {
@@ -71,6 +74,8 @@ interface Profile {
   avatar_url: string | null
   /** lo que cobra el banco por transferir a otro banco (Ecuador: ~$0,40) */
   comision_interbancaria?: number | null
+  /** % de IVA que el banco cobra aparte por servicios digitales del exterior (Ecuador: 15) */
+  iva_digital?: number | null
 }
 
 const accounts = ref<BankAccount[]>([])
@@ -286,6 +291,19 @@ export function useFinances() {
   /** Comisión por transferencia interbancaria del usuario (por defecto $0,40) */
   const comisionDe = (userId: string) => Number(profilesCache.value[userId]?.comision_interbancaria ?? 0.4)
 
+  const ivaDigitalDe = (userId: string) => Number(profilesCache.value[userId]?.iva_digital ?? 15)
+
+  const guardarIvaDigital = async (userId: string, valor: number) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ iva_digital: valor })
+      .eq('id', userId)
+      .select()
+      .single()
+    if (error) throw new Error(error.message)
+    profilesCache.value = { ...profilesCache.value, [userId]: data }
+  }
+
   const guardarComision = async (userId: string, valor: number) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -348,6 +366,8 @@ export function useFinances() {
     getDisplayName,
     comisionDe,
     guardarComision,
+    ivaDigitalDe,
+    guardarIvaDigital,
     profilesCache,
   }
 }

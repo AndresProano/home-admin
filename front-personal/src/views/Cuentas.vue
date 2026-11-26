@@ -5,13 +5,14 @@ import { useAuth } from '@/composables/useAuth'
 import { useFinances, type BankAccount } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
 import { dinero, fechaLarga, hoy } from '@/lib/fechas'
+import { resumenISD, ISD_EXENTO_ANUAL, ISD_TASA } from '@/lib/impuestos'
 import {
   SUBTIPOS, ENTIDADES, infoSubtipo, esDeuda, deudaDe, rendimiento, avanceMeta, diasParaVencer, resumenCuentas,
   type Subtipo,
 } from '@/lib/cuentas'
 
 const { user } = useAuth()
-const { accounts, addAccount, updateAccount, removeAccount, comisionDe, guardarComision } = useFinances()
+const { accounts, expenses, addAccount, updateAccount, removeAccount, comisionDe, guardarComision, ivaDigitalDe, guardarIvaDigital } = useFinances()
 const { cargar, tienePareja, esMio, nombreDe, abrirNuevo } = useApp()
 
 onMounted(() => cargar())
@@ -110,6 +111,18 @@ const guardarLaComision = async () => {
   catch (e: any) { alert('No se pudo guardar: ' + (e.message ?? e)) }
 }
 
+/* ---------- IVA servicios digitales + ISD ---------- */
+const editandoIva = ref(false)
+const ivaTexto = ref<number | null>(null)
+const ivaDigital = computed(() => user.value ? ivaDigitalDe(user.value.id) : 15)
+const abrirIva = () => { ivaTexto.value = ivaDigital.value; editandoIva.value = true }
+const guardarElIva = async () => {
+  if (!user.value) return
+  try { await guardarIvaDigital(user.value.id, Math.min(50, Math.max(0, Number(ivaTexto.value || 0)))); editandoIva.value = false }
+  catch (e: any) { alert('No se pudo guardar: ' + (e.message ?? e)) }
+}
+const isd = computed(() => user.value ? resumenISD(expenses.value, user.value.id) : null)
+
 /* ---------- transferencias ---------- */
 const transferir = (hacia?: BankAccount) => {
   const origen = mias.value.find(c => infoSubtipo(c.subtipo).grupo === 'disponible' && c.id !== hacia?.id)
@@ -206,6 +219,24 @@ const textoVence = (c: BankAccount) => {
         <button class="btn primario" type="submit" style="flex: 0 0 auto">Guardar</button>
       </form>
       <button v-else class="btn" @click="abrirComision">${{ dinero(comision) }} · cambiar</button>
+
+      <span class="mov-info" style="border-top: var(--borde); padding-top: 10px">
+        <strong>IVA a servicios digitales del exterior</strong>
+        <span>Netflix, Spotify, Apple… El banco lo cobra aparte; se agrega solo al marcar "Servicio digital / del exterior".</span>
+      </span>
+      <form v-if="editandoIva" class="fila" style="align-items: flex-end" @submit.prevent="guardarElIva">
+        <label class="campo">Porcentaje (%)<input v-model.number="ivaTexto" type="number" step="0.01" min="0" max="50" inputmode="decimal" /></label>
+        <button class="btn primario" type="submit" style="flex: 0 0 auto">Guardar</button>
+      </form>
+      <button v-else class="btn" @click="abrirIva">{{ ivaDigital.toLocaleString('es-EC') }}% · cambiar</button>
+    </section>
+
+    <section v-if="isd && isd.total > 0" class="bloque isd" :class="{ pasado: isd.exceso > 0 }">
+      <strong>Consumos en el exterior {{ isd.anio }}</strong>
+      <span class="cifra" style="font-size: 22px">${{ dinero(isd.total) }} <small class="muted">de ${{ dinero(ISD_EXENTO_ANUAL) }} exentos de ISD</small></span>
+      <span class="barra" :class="{ pasado: isd.exceso > 0 }"><div :style="{ width: isd.porcentaje * 100 + '%' }"></div></span>
+      <span v-if="isd.exceso > 0" class="detalle rojo">Te pasaste ${{ dinero(isd.exceso) }}: ISD estimado {{ ISD_TASA }}% = ${{ dinero(isd.isdEstimado) }}. Se declara y paga en abril del próximo año.</span>
+      <span v-else class="detalle">Te quedan ${{ dinero(isd.restanteExento) }} antes de pagar ISD ({{ ISD_TASA }}% sobre el exceso).</span>
     </section>
 
     <div v-if="!mias.length" class="bloque punteado vacio">
@@ -309,6 +340,8 @@ const textoVence = (c: BankAccount) => {
 .tipo-op.on { background: var(--tinta); color: #fff; }
 .tipo-op.on span:last-child { color: #ddd; }
 .comision-ajuste { display: flex; flex-direction: column; gap: 10px; }
+.isd { display: flex; flex-direction: column; gap: 8px; background: var(--cielo); }
+.isd.pasado { background: var(--durazno); }
 .check { display: flex; gap: 10px; align-items: center; font-size: 14px; font-weight: 600; }
 .check input { width: 22px; height: 22px; accent-color: var(--azul); }
 </style>
