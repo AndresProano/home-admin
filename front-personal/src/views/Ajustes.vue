@@ -25,6 +25,15 @@ const nombre = computed(() => user.value ? getDisplayName(user.value.id) : '')
 /* Cuentas */
 const resumen = computed(() => resumenCuentas(accounts.value.filter(a => esMio(a.owner_id))))
 
+/* Secciones desplegables: una abierta a la vez */
+type Seccion = 'pareja' | 'atajo' | 'excel' | 'cuenta'
+const abierta = ref<Seccion | null>(null)
+const alternar = (id: Seccion, ev: Event) => {
+  const abiertoAhora = (ev.target as HTMLDetailsElement).open
+  if (abiertoAhora) abierta.value = id
+  else if (abierta.value === id) abierta.value = null
+}
+
 /* Pareja */
 const desvincular = async () => {
   if (confirm('¿Desvincular a tu pareja? Los presupuestos compartidos dejarán de verse.')) await removePartner()
@@ -120,38 +129,55 @@ const salir = async () => {
 </script>
 
 <template>
-  <main class="pagina">
+  <main class="pagina angosta">
     <header class="cabecera">
       <h1 class="titulo-pagina">Ajustes</h1>
     </header>
 
-    <div class="columnas">
+    <div class="lista-ajustes">
     <!-- Cuentas -->
-    <RouterLink to="/cuentas" class="bloque seccion enlace-cuentas">
-      <span class="cabecera" style="min-height: 0">
-        <h2 class="subtitulo" style="margin: 0">Mis cuentas</h2>
-        <Icono nombre="flecha" :grosor="2.5" />
+    <RouterLink to="/cuentas" class="bloque desplegable enlace-fila">
+      <span class="fila-titulo">
+        <span class="icono-fila" style="background: var(--amarillo)"><Icono nombre="banco" :tam="20" /></span>
+        <span class="fila-textos">
+          <strong>Mis cuentas</strong>
+          <span v-if="accounts.length">Tienes ${{ dinero(resumen.disponible + resumen.ahorro) }}<template v-if="resumen.deuda > 0"> · <span class="rojo">debes ${{ dinero(resumen.deuda) }}</span></template></span>
+          <span v-else>Bancos, tarjetas, efectivo y metas</span>
+        </span>
+        <Icono nombre="flecha" :tam="20" :grosor="2.5" />
       </span>
-      <span v-if="accounts.length" class="totales-cuentas">
-        <span>Tienes <strong class="cifra">${{ dinero(resumen.disponible + resumen.ahorro) }}</strong></span>
-        <span v-if="resumen.deuda > 0">Debes <strong class="cifra rojo">${{ dinero(resumen.deuda) }}</strong></span>
-      </span>
-      <span class="muted" style="color: var(--tinta)">Bancos, cuenta meta, pólizas, tarjetas y efectivo. Edítalas, transfiere entre ellas y mira cuánto te rinden.</span>
     </RouterLink>
 
     <!-- Pareja -->
-    <section class="bloque seccion" style="background: var(--lila)">
-      <h2 class="subtitulo" style="margin: 0">Finanzas en pareja</h2>
+    <details class="bloque desplegable" :open="abierta === 'pareja'" @toggle="alternar('pareja', $event)">
+      <summary class="fila-titulo">
+        <span class="icono-fila" style="background: var(--lila)"><Icono nombre="pareja" :tam="20" /></span>
+        <span class="fila-textos">
+          <strong>Finanzas en pareja</strong>
+          <span>{{ parejaId ? `Vinculado con ${getDisplayName(parejaId).split(' ')[0]}` : 'Sin vincular · invita con un código' }}</span>
+        </span>
+        <Icono class="chevron" nombre="adelante" :tam="20" :grosor="2.5" />
+      </summary>
+      <div class="cuerpo">
       <template v-if="partner && partner.status === 'active' && parejaId">
         <p style="margin: 0">Vinculado con <strong>{{ getDisplayName(parejaId) }}</strong>. Pueden armar presupuestos compartidos y marcar gastos como "de los dos".</p>
         <button class="btn peligro" @click="desvincular">Desvincular</button>
       </template>
       <VincularPareja v-else />
-    </section>
+      </div>
+    </details>
 
     <!-- Atajo -->
-    <section class="bloque seccion" style="background: var(--cielo)">
-      <h2 class="subtitulo" style="margin: 0">Atajo de iPhone (Apple Pay)</h2>
+    <details class="bloque desplegable" :open="abierta === 'atajo'" @toggle="alternar('atajo', $event)">
+      <summary class="fila-titulo">
+        <span class="icono-fila" style="background: var(--cielo)"><Icono nombre="tarjeta" :tam="20" /></span>
+        <span class="fila-textos">
+          <strong>Atajo de iPhone (Apple Pay)</strong>
+          <span>{{ apiKey ? 'Gastos automáticos con Apple Pay' : 'Sin configurar' }}</span>
+        </span>
+        <Icono class="chevron" nombre="adelante" :tam="20" :grosor="2.5" />
+      </summary>
+      <div class="cuerpo">
       <p style="margin: 0">Cada vez que pagas con Apple Pay, el atajo registra el gasto, te pregunta en qué fue y te avisa cuánto te queda.</p>
       <template v-if="apiKey">
         <div class="clave">
@@ -200,11 +226,20 @@ const salir = async () => {
         </details>
       </template>
       <button v-else class="btn primario" @click="generarClave">Generar mi API key</button>
-    </section>
+      </div>
+    </details>
 
     <!-- Importar / exportar -->
-    <section class="bloque seccion" style="background: var(--lima)">
-      <h2 class="subtitulo" style="margin: 0">Importar desde Excel</h2>
+    <details class="bloque desplegable" :open="abierta === 'excel'" @toggle="alternar('excel', $event)">
+      <summary class="fila-titulo">
+        <span class="icono-fila" style="background: var(--lima)"><Icono nombre="movimientos" :tam="20" /></span>
+        <span class="fila-textos">
+          <strong>Excel</strong>
+          <span>Importar desde una hoja o descargar tus datos</span>
+        </span>
+        <Icono class="chevron" nombre="adelante" :tam="20" :grosor="2.5" />
+      </summary>
+      <div class="cuerpo">
       <p style="margin: 0">¿Llevabas tus cuentas y gastos en otra app o en una hoja? Pásalos a la plantilla y súbela. Todo es opcional.</p>
       <ol class="pasos">
         <li><button class="btn" style="background: #fff; width: 100%" :disabled="ocupado" @click="bajarPlantilla">Descargar plantilla de Excel</button></li>
@@ -244,30 +279,48 @@ const salir = async () => {
       </div>
       <p v-if="mensajeExcel" class="bloque" style="margin: 0; background: #fff" :class="{ rojo: errorExcel }">{{ mensajeExcel }}</p>
 
-      <button class="btn" style="background: #fff" :disabled="ocupado || (!expenses.length && !accounts.length)" @click="bajarMovimientos">Descargar mis cuentas y movimientos (Excel)</button>
-    </section>
+      <button class="btn" :disabled="ocupado || (!expenses.length && !accounts.length)" @click="bajarMovimientos">Descargar mis cuentas y movimientos (Excel)</button>
+      </div>
+    </details>
 
     <!-- Sesión -->
-    <section class="bloque seccion">
-      <h2 class="subtitulo" style="margin: 0">Tu cuenta</h2>
-      <div style="display: flex; align-items: center; gap: 12px">
-        <Avatar :foto="user ? fotoDe(user.id) : null" :nombre="nombre" :tam="56" />
-        <p style="margin: 0">{{ nombre }}<br><span class="muted">{{ user?.email }}</span></p>
+    <details class="bloque desplegable" :open="abierta === 'cuenta'" @toggle="alternar('cuenta', $event)">
+      <summary class="fila-titulo">
+        <Avatar :foto="user ? fotoDe(user.id) : null" :nombre="nombre" :tam="40" />
+        <span class="fila-textos">
+          <strong>{{ nombre || 'Tu cuenta' }}</strong>
+          <span>{{ user?.email }}</span>
+        </span>
+        <Icono class="chevron" nombre="adelante" :tam="20" :grosor="2.5" />
+      </summary>
+      <div class="cuerpo">
+        <button class="btn" @click="salir"><Icono nombre="salir" :tam="18" /> Cerrar sesión</button>
       </div>
-      <button class="btn" @click="salir"><Icono nombre="salir" :tam="18" /> Cerrar sesión</button>
-    </section>
+    </details>
     </div>
   </main>
 </template>
 
 <style scoped>
-.seccion { display: flex; flex-direction: column; gap: 12px; }
 .form { display: flex; flex-direction: column; gap: 10px; }
 .check { display: flex; gap: 10px; align-items: center; font-size: 14px; font-weight: 600; }
 .check input { width: 22px; height: 22px; accent-color: var(--azul); }
-.enlace-cuentas { text-decoration: none; color: var(--tinta); box-shadow: var(--sombra-chica); }
-.totales-cuentas { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; border-top: var(--borde); padding-top: 10px; }
-.totales-cuentas .cifra { font-size: 18px; }
+.lista-ajustes { display: flex; flex-direction: column; gap: 10px; }
+.desplegable { padding: 0; overflow: hidden; }
+.desplegable[open] { box-shadow: var(--sombra); }
+.fila-titulo { display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-height: 64px; cursor: pointer; list-style: none; }
+.fila-titulo::-webkit-details-marker { display: none; }
+.fila-titulo:hover { background: var(--neutro); }
+.desplegable[open] > .fila-titulo { border-bottom: var(--borde); }
+.icono-fila { width: 40px; height: 40px; flex: 0 0 auto; border: var(--borde); border-radius: 12px; display: grid; place-items: center; }
+.fila-textos { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fila-textos strong { font-family: var(--titulo); font-size: 17px; }
+.fila-textos > span { font-size: 13px; color: var(--gris); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chevron { transition: transform 0.2s; flex: 0 0 auto; }
+.desplegable[open] .chevron { transform: rotate(90deg); }
+.cuerpo { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.enlace-fila { text-decoration: none; color: var(--tinta); display: block; }
+@media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
 .etiqueta-tipo { font-size: 11px; font-weight: 800; border: var(--borde); border-radius: 8px; padding: 3px 6px; text-transform: uppercase; background: var(--menta); }
 .etiqueta-tipo.credito { background: var(--durazno); }
 .fila-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: var(--borde); }
