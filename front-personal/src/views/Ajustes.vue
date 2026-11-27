@@ -125,6 +125,7 @@ const salir = async () => {
       <h1 class="titulo-pagina">Ajustes</h1>
     </header>
 
+    <div class="columnas">
     <!-- Cuentas -->
     <RouterLink to="/cuentas" class="bloque seccion enlace-cuentas">
       <span class="cabecera" style="min-height: 0">
@@ -255,6 +256,7 @@ const salir = async () => {
       </div>
       <button class="btn" @click="salir"><Icono nombre="salir" :tam="18" /> Cerrar sesión</button>
     </section>
+    </div>
   </main>
 </template>
 

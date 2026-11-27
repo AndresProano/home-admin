@@ -166,6 +166,7 @@ const textoVence = (c: BankAccount) => {
       <button v-if="mias.some(esDeuda)" class="btn" @click="transferir(mias.find(esDeuda))"><Icono nombre="tarjeta" :tam="18" /> Pagar tarjeta</button>
     </div>
 
+    <div class="columnas">
     <!-- Grupos -->
     <section v-for="g in grupos" :key="g.id" class="grupo">
       <h2 class="subtitulo">{{ g.titulo }}</h2>
@@ -238,6 +239,8 @@ const textoVence = (c: BankAccount) => {
       <span v-if="isd.exceso > 0" class="detalle rojo">Te pasaste ${{ dinero(isd.exceso) }}: ISD estimado {{ ISD_TASA }}% = ${{ dinero(isd.isdEstimado) }}. Se declara y paga en abril del próximo año.</span>
       <span v-else class="detalle">Te quedan ${{ dinero(isd.restanteExento) }} antes de pagar ISD ({{ ISD_TASA }}% sobre el exceso).</span>
     </section>
+
+    </div>
 
     <div v-if="!mias.length" class="bloque punteado vacio">
       <strong>Agrega tus cuentas</strong>
