@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Icono from '@/components/Icono.vue'
+import VincularPareja from '@/components/VincularPareja.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useFinances, type Budget } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
@@ -15,6 +16,9 @@ const { expenses, budgets, saveBudget, removeBudget } = useFinances()
 const { lista, compartido, parejaId, tienePareja, cargar, nombreDe } = useApp()
 
 onMounted(() => cargar())
+
+/** Eligió "Con mi pareja" pero todavía no se vinculan */
+const pidePareja = computed(() => lista.value === 'shared' && !tienePareja.value)
 
 const leer = (k: string, def: string) => { try { return localStorage.getItem(k) || def } catch { return def } }
 const periodo = ref<Periodo>(leer('fin_periodoPresupuesto', 'mensual') as Periodo)
@@ -134,16 +138,24 @@ const borrar = async () => {
   <main class="pagina">
     <header class="cabecera">
       <h1 class="titulo-pagina">Presupuestos</h1>
-      <button class="btn-icono amarillo" aria-label="Nuevo presupuesto" @click="abrirNuevo()"><Icono nombre="mas" :grosor="2.8" /></button>
+      <button v-if="!pidePareja" class="btn-icono amarillo" aria-label="Nuevo presupuesto" @click="abrirNuevo()"><Icono nombre="mas" :grosor="2.8" /></button>
     </header>
 
     <div class="seg">
-      <button :class="{ on: periodo === 'mensual' }" @click="cambiarPeriodo('mensual')">Mes</button>
-      <button :class="{ on: periodo === 'anual' }" @click="cambiarPeriodo('anual')">Año</button>
-    </div>
-    <div v-if="tienePareja" class="seg">
       <button :class="{ on: lista === 'personal' }" @click="lista = 'personal'">Mío</button>
       <button :class="{ on: lista === 'shared' }" @click="lista = 'shared'">Con mi pareja</button>
+    </div>
+
+    <section v-if="pidePareja" class="bloque seccion-pareja" style="background: var(--lila)">
+      <h2 class="subtitulo" style="margin: 0">Presupuesto en pareja</h2>
+      <p style="margin: 0">Primero vincúlense: uno genera un código y el otro lo pone en su app (los dos entran con su cuenta de Google). Después arman juntos presupuestos como "Salidas: $100 cada uno" y ven cuánto lleva gastado cada quien.</p>
+      <VincularPareja />
+    </section>
+
+    <template v-else>
+    <div class="seg">
+      <button :class="{ on: periodo === 'mensual' }" @click="cambiarPeriodo('mensual')">Mes</button>
+      <button :class="{ on: periodo === 'anual' }" @click="cambiarPeriodo('anual')">Año</button>
     </div>
 
     <div class="navegador">
@@ -217,6 +229,8 @@ const borrar = async () => {
       </div>
     </section>
 
+    </template>
+
     <!-- Formulario -->
     <div v-if="form.abierto" class="velo" @click.self="form.abierto = false">
       <form class="hoja" @submit.prevent="guardar">
@@ -272,6 +286,7 @@ const borrar = async () => {
 </template>
 
 <style scoped>
+.seccion-pareja { display: flex; flex-direction: column; gap: 12px; }
 .navegador { display: flex; align-items: center; justify-content: space-between; }
 .aviso { text-align: left; font: inherit; font-size: 14px; cursor: pointer; color: var(--tinta); }
 .fila-total, .fila-cat { display: flex; flex-direction: column; gap: 10px; text-align: left; font: inherit; cursor: pointer; width: 100%; color: inherit; }
