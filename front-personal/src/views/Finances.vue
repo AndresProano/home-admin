@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import Icono from '@/components/Icono.vue'
-import Avatar from '@/components/Avatar.vue'
+import SelectorPareja from '@/components/SelectorPareja.vue'
 import EscuchaVoz from '@/components/EscuchaVoz.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useFinances, type Expense } from '@/composables/useFinances'
@@ -17,7 +17,7 @@ const router = useRouter()
 const route = useRoute()
 const { user } = useAuth()
 const { accounts, expenses, budgets, pendingReview, getDisplayName, addExpense, removeExpense, ivaDigitalDe } = useFinances()
-const { lista, compartido, tienePareja, cargar, abrirClasificar, abrirNuevo, abrirMovimiento, nombreDe, fotoDe } = useApp()
+const { compartido, cargar, abrirClasificar, abrirNuevo, abrirMovimiento, nombreDe } = useApp()
 
 const cargando = ref(true)
 onMounted(async () => {
@@ -31,7 +31,6 @@ onMounted(async () => {
 })
 
 const nombre = computed(() => user.value ? getDisplayName(user.value.id).split(' ')[0] : '')
-const foto = computed(() => user.value ? fotoDe(user.value.id) : null)
 
 /* Lo de la lista activa (mío / compartido) */
 const enLista = (e: { is_shared: boolean }) => e.is_shared === compartido.value
@@ -220,14 +219,9 @@ const deshacerDictado = async () => {
       </div>
       <div style="display: flex; gap: 8px">
         <button class="btn-icono" :class="{ amarillo: escuchando }" aria-label="Dictar un gasto" @click="dictar"><Icono nombre="mic" /></button>
-        <RouterLink to="/ajustes" class="enlace-avatar" aria-label="Ajustes"><Avatar :foto="foto" :nombre="nombre" /></RouterLink>
+        <SelectorPareja />
       </div>
     </header>
-
-    <div v-if="tienePareja" class="seg" role="tablist" aria-label="Lista">
-      <button role="tab" :aria-selected="lista === 'personal'" :class="{ on: lista === 'personal' }" @click="lista = 'personal'">Mío</button>
-      <button role="tab" :aria-selected="lista === 'shared'" :class="{ on: lista === 'shared' }" @click="lista = 'shared'">Con mi pareja</button>
-    </div>
 
     <!-- Bloque azul -->
     <section class="bloque azul sombra heroe" aria-live="polite">
@@ -322,7 +316,6 @@ const deshacerDictado = async () => {
 .aviso-voz .oido { color: var(--tinta); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 28px; }
 .aviso-voz .btn { min-height: 42px; }
 .cerrar-aviso { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border: none; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.enlace-avatar { display: inline-flex; text-decoration: none; border-radius: 50%; }
 .heroe { display: flex; flex-direction: column; gap: 10px; padding: 18px; }
 .etiqueta { font-size: 14px; font-weight: 600; }
 .grande { font-size: 46px; line-height: 1; letter-spacing: -1.5px; }

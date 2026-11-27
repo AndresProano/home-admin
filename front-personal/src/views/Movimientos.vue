@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import Icono from '@/components/Icono.vue'
+import SelectorPareja from '@/components/SelectorPareja.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useFinances, type Expense } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
@@ -10,7 +11,7 @@ import { aISO, hoy, ayer, fechaLarga, dinero } from '@/lib/fechas'
 
 const { user } = useAuth()
 const { expenses, accounts } = useFinances()
-const { lista, compartido, tienePareja, cargar, abrirMovimiento, nombreDe } = useApp()
+const { compartido, cargar, abrirMovimiento, nombreDe } = useApp()
 
 onMounted(() => cargar())
 
@@ -67,12 +68,8 @@ const detalle = (e: Expense) => esTransfer(e) ? `Transferencia · ${soloNombre(e
   <main class="pagina">
     <header class="cabecera">
       <h1 class="titulo-pagina">Movimientos</h1>
+      <SelectorPareja />
     </header>
-
-    <div v-if="tienePareja" class="seg">
-      <button :class="{ on: lista === 'personal' }" @click="lista = 'personal'">Mío</button>
-      <button :class="{ on: lista === 'shared' }" @click="lista = 'shared'">Con mi pareja</button>
-    </div>
 
     <div class="seg">
       <button :class="{ on: periodo === 'week' }" @click="periodo = 'week'">Semana</button>
