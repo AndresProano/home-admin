@@ -141,6 +141,7 @@ const borrar = async () => {
       </div>
     </header>
 
+    <div class="controles">
     <div class="seg">
       <button :class="{ on: periodo === 'mensual' }" @click="cambiarPeriodo('mensual')">Mes</button>
       <button :class="{ on: periodo === 'anual' }" @click="cambiarPeriodo('anual')">Año</button>
@@ -150,6 +151,7 @@ const borrar = async () => {
       <button class="btn-icono" aria-label="Anterior" @click="mover(-1)"><Icono nombre="atras" /></button>
       <span class="cifra" style="font-size: 18px; text-transform: capitalize">{{ etiquetaPeriodo }}</span>
       <button class="btn-icono" aria-label="Siguiente" @click="mover(1)"><Icono nombre="adelante" /></button>
+    </div>
     </div>
     <button v-if="!esActual" class="btn" style="min-height: 40px" @click="ref_ = new Date()">Volver a hoy</button>
 
@@ -177,6 +179,7 @@ const borrar = async () => {
     </div>
 
     <!-- Por categoría -->
+    <div class="rejilla-2">
     <button v-for="e in porCategoria" :key="e.budget.id" class="bloque fila-cat" :class="{ sombra: e.budget.is_shared }"
       :style="{ background: e.restante < 0 ? 'var(--durazno)' : colorDe(e.budget.category) }" @click="abrirEditar(e.budget)">
       <span class="fila-arriba">
@@ -197,6 +200,8 @@ const borrar = async () => {
         </span>
       </span>
     </button>
+
+    </div>
 
     <div v-if="!estados.length" class="bloque punteado vacio">
       <strong>No {{ compartido ? 'tienen' : 'tienes' }} presupuestos {{ compartido ? 'compartidos ' : '' }}{{ periodo === 'anual' ? 'anuales' : 'mensuales' }}</strong>

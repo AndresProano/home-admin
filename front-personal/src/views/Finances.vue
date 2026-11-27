@@ -223,6 +223,8 @@ const deshacerDictado = async () => {
       </div>
     </header>
 
+    <div class="dos-columnas">
+    <div class="col">
     <!-- Bloque azul -->
     <section class="bloque azul sombra heroe" aria-live="polite">
       <template v-if="heroe">
@@ -272,6 +274,8 @@ const deshacerDictado = async () => {
       </RouterLink>
     </div>
 
+    </div>
+    <div class="col">
     <!-- Últimos movimientos -->
     <div class="cabecera" style="min-height: 0">
       <h2 class="subtitulo">Últimos movimientos</h2>
@@ -289,6 +293,8 @@ const deshacerDictado = async () => {
         <span class="mov-info"><strong>{{ e.description }}</strong><span>{{ detalle(e) }}</span></span>
         <span class="mov-monto" :class="{ ingreso: e.type === 'income' }">{{ esTransfer(e) ? '' : e.type === 'income' ? '+' : '−' }}${{ dinero(Number(e.amount)) }}</span>
       </button>
+    </div>
+    </div>
     </div>
     <EscuchaVoz v-if="estadoVoz" :estado="estadoVoz" :texto="textoVoz" :mensaje="mensajeVoz"
       @listo="terminarVoz" @cancelar="cancelarVoz" @reintentar="dictar" />
@@ -308,6 +314,9 @@ const deshacerDictado = async () => {
 </template>
 
 <style scoped>
+@media (min-width: 900px) {
+  .aviso-voz { left: auto; right: 32px; bottom: 32px; width: 400px; }
+}
 .aviso-voz {
   position: fixed; left: 12px; right: 12px; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 60;
   max-width: 496px; margin: 0 auto; background: var(--amarillo);

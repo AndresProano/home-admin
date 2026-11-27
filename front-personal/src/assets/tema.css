@@ -48,7 +48,7 @@ a { color: var(--tinta); }
   gap: 14px;
 }
 .cabecera { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; }
-.cabecera > :last-child { margin-left: auto; }
+.cabecera > :last-child:not(:first-child) { margin-left: auto; }
 .titulo-pagina { font-family: var(--titulo); font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin: 0; }
 .subtitulo { font-family: var(--titulo); font-size: 18px; font-weight: 700; margin: 6px 0 0; }
 .cifra { font-family: var(--titulo); font-weight: 700; letter-spacing: -0.5px; }
@@ -130,6 +130,33 @@ a { color: var(--tinta); }
 @keyframes subir { from { transform: translateY(100%); } to { transform: translateY(0); } }
 .hoja > * { flex-shrink: 0; }
 .agarre { width: 44px; height: 5px; border-radius: 3px; background: var(--tinta); margin: 0 auto 4px; opacity: 0.25; }
+
+/* Envoltorios de escritorio: en el celular no existen (display: contents) */
+.dos-columnas, .col, .rejilla-2, .columnas, .controles { display: contents; }
+
+/* ─────────────────────────────────────────────
+   Escritorio (≥ 900px): menú lateral, contenido más ancho, columnas.
+   Nada de esto afecta al celular.
+   ───────────────────────────────────────────── */
+@media (min-width: 900px) {
+  .pagina { padding: 36px 48px 56px; gap: 18px; width: 100%; max-width: 1140px; margin: 0; }
+  .pagina.angosta { max-width: 860px; }
+  .titulo-pagina { font-size: 34px; }
+
+  .dos-columnas { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+  .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .rejilla-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  .controles { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: center; }
+  .columnas { display: block; columns: 2; column-gap: 18px; }
+  .columnas > * { break-inside: avoid; margin-bottom: 18px; }
+
+  /* Las hojas salen como ventana centrada */
+  .velo { align-items: center; padding: 24px; }
+  .hoja { max-width: 560px; max-height: 88vh; border-bottom: var(--borde); border-radius: 24px; padding-bottom: 22px; box-shadow: var(--sombra); animation: aparecer 0.18s ease; }
+  .agarre { display: none; }
+}
+@keyframes aparecer { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+
 .acciones { display: flex; gap: 10px; }
 .acciones .btn { flex: 1; }
 

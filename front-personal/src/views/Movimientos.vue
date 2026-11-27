@@ -65,7 +65,7 @@ const detalle = (e: Expense) => esTransfer(e) ? `Transferencia · ${soloNombre(e
 </script>
 
 <template>
-  <main class="pagina">
+  <main class="pagina angosta">
     <header class="cabecera">
       <h1 class="titulo-pagina">Movimientos</h1>
       <SelectorPareja />
