@@ -47,7 +47,8 @@ a { color: var(--tinta); }
   flex-direction: column;
   gap: 14px;
 }
-.cabecera { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; }
+.cabecera { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; }
+.cabecera > :last-child { margin-left: auto; }
 .titulo-pagina { font-family: var(--titulo); font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin: 0; }
 .subtitulo { font-family: var(--titulo); font-size: 18px; font-weight: 700; margin: 6px 0 0; }
 .cifra { font-family: var(--titulo); font-weight: 700; letter-spacing: -0.5px; }
