@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import Icono from '@/components/Icono.vue'
 import Avatar from '@/components/Avatar.vue'
+import VincularPareja from '@/components/VincularPareja.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useFinances } from '@/composables/useFinances'
 import { useApp } from '@/composables/useApp'
@@ -13,7 +14,7 @@ import { CATEGORIAS } from '@/lib/categorias'
 
 const router = useRouter()
 const { user, signOut } = useAuth()
-const { accounts, expenses, importarMovimientos, addAccount, partner, apiKey, createPartnerInvite, joinPartner, removePartner,
+const { accounts, expenses, importarMovimientos, addAccount, partner, apiKey, removePartner,
   generateApiKey, getDisplayName } = useFinances()
 const { cargar, olvidarCarga, parejaId, esMio, fotoDe } = useApp()
 
@@ -25,19 +26,6 @@ const nombre = computed(() => user.value ? getDisplayName(user.value.id) : '')
 const resumen = computed(() => resumenCuentas(accounts.value.filter(a => esMio(a.owner_id))))
 
 /* Pareja */
-const modoPareja = ref<'unirme' | 'invitar'>('unirme')
-const codigo = ref('')
-const errorPareja = ref('')
-const invitar = async () => {
-  errorPareja.value = ''
-  if (!user.value) return
-  try { await createPartnerInvite(user.value.id) } catch (e: any) { errorPareja.value = e.message }
-}
-const unirme = async () => {
-  errorPareja.value = ''
-  if (!codigo.value.trim()) return
-  try { await joinPartner(codigo.value.trim()); await cargar(true) } catch (e: any) { errorPareja.value = e.message }
-}
 const desvincular = async () => {
   if (confirm('¿Desvincular a tu pareja? Los presupuestos compartidos dejarán de verse.')) await removePartner()
 }
@@ -157,28 +145,7 @@ const salir = async () => {
         <p style="margin: 0">Vinculado con <strong>{{ getDisplayName(parejaId) }}</strong>. Pueden armar presupuestos compartidos y marcar gastos como "de los dos".</p>
         <button class="btn peligro" @click="desvincular">Desvincular</button>
       </template>
-      <template v-else-if="partner && partner.status === 'pending'">
-        <p style="margin: 0">Comparte este código con tu pareja para que lo ponga en "Unirme":</p>
-        <button class="btn negro codigo" @click="copiar(partner.invite_code, 'codigo')">
-          <span class="cifra" style="font-size: 22px; letter-spacing: 2px">{{ partner.invite_code }}</span>
-          <span style="font-size: 13px">{{ copiado === 'codigo' ? 'Copiado' : 'Copiar' }}</span>
-        </button>
-      </template>
-      <template v-else>
-        <div class="seg">
-          <button :class="{ on: modoPareja === 'unirme' }" @click="modoPareja = 'unirme'">Unirme</button>
-          <button :class="{ on: modoPareja === 'invitar' }" @click="modoPareja = 'invitar'">Invitar</button>
-        </div>
-        <form v-if="modoPareja === 'unirme'" class="form" @submit.prevent="unirme">
-          <label class="campo">Código de tu pareja<input v-model="codigo" type="text" autocapitalize="none" placeholder="Ej: a1b2c3d4" /></label>
-          <button class="btn primario" type="submit">Unirme</button>
-        </form>
-        <template v-else>
-          <p style="margin: 0">Genera un código y compártelo con tu pareja.</p>
-          <button class="btn primario" @click="invitar">Generar código</button>
-        </template>
-        <p v-if="errorPareja" class="error">{{ errorPareja }}</p>
-      </template>
+      <VincularPareja v-else />
     </section>
 
     <!-- Atajo -->

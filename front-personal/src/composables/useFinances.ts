@@ -93,10 +93,9 @@ export function useFinances() {
       .select('*')
       .or(`user_a.eq.${userId},user_b.eq.${userId}`)
       .in('status', ['active', 'pending'])
-      .limit(1)
-      .single()
-
-    partner.value = data
+    // Si quedó una invitación pendiente además del vínculo activo, manda el activo
+    const filas = (data ?? []) as FinancePartner[]
+    partner.value = filas.find(f => f.status === 'active') ?? filas[0] ?? null
   }
 
   const createPartnerInvite = async (userId: string) => {
@@ -115,8 +114,18 @@ export function useFinances() {
     // La función join_partner valida el código en el servidor (nadie puede listar invitaciones ajenas)
     const { data, error } = await supabase.rpc('join_partner', { p_code: inviteCode.trim() })
     if (error) throw new Error(error.message)
+    // Mis propias invitaciones pendientes ya no sirven: se borran para que no tapen el vínculo
+    const yo = (data as FinancePartner).user_b
+    if (yo) await supabase.from('finance_partners').delete().eq('user_a', yo).eq('status', 'pending')
     partner.value = data
     return data
+  }
+
+  const cancelarInvitacion = async () => {
+    if (!partner.value || partner.value.status !== 'pending') return
+    const { error } = await supabase.from('finance_partners').delete().eq('id', partner.value.id)
+    if (error) throw new Error(error.message)
+    partner.value = null
   }
 
   const removePartner = async () => {
@@ -348,6 +357,7 @@ export function useFinances() {
     createPartnerInvite,
     joinPartner,
     removePartner,
+    cancelarInvitacion,
     loadAccounts,
     addAccount,
     updateAccount,
